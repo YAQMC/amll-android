@@ -57,7 +57,23 @@ fun AMLLPlayer(
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val isNarrowViewport = configuration.screenWidthDp <= 1024
+    var measuredViewportWidthPx by remember { mutableIntStateOf(0) }
     var measuredViewportHeightPx by remember { mutableIntStateOf(0) }
+
+    val fixedHorizontalPaddingPx = if (style.horizontalPadding.value.isNaN()) {
+        null
+    } else {
+        with(density) { style.horizontalPadding.toPx() }
+    }
+    val lineFontSizePx = with(density) { style.lineFontSize.toPx() }
+    val horizontalPaddingPx = resolveAMLLHorizontalPaddingPx(
+        viewportWidthPx = measuredViewportWidthPx,
+        density = density.density,
+        lineFontSizePx = lineFontSizePx,
+        fixedPaddingPx = fixedHorizontalPaddingPx,
+    )
+    val horizontalPadding = with(density) { horizontalPaddingPx.toDp() }
+    val horizontalPaddingIntPx = horizontalPaddingPx.roundToInt()
 
     val minimumVerticalPaddingPx = with(density) { style.verticalPadding.toPx() }
     val focusEdgePaddingPx = remember(
@@ -169,6 +185,7 @@ fun AMLLPlayer(
         measuredViewportHeightPx,
         beforePaddingPx,
         afterPaddingPx,
+        horizontalPaddingIntPx,
     ) {
         if (autoAlignSuspended) return@LaunchedEffect
         if (focusItemIndex !in listItems.indices) return@LaunchedEffect
@@ -231,7 +248,10 @@ fun AMLLPlayer(
         state = listState,
         modifier = modifier
             .fillMaxSize()
-            .onSizeChanged { size -> measuredViewportHeightPx = size.height }
+            .onSizeChanged { size ->
+                measuredViewportWidthPx = size.width
+                measuredViewportHeightPx = size.height
+            }
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     val touchIntent = TouchScrollIntentTracker()
@@ -297,9 +317,9 @@ fun AMLLPlayer(
                 }
             },
         contentPadding = PaddingValues(
-            start = style.horizontalPadding,
+            start = horizontalPadding,
             top = beforePadding,
-            end = style.horizontalPadding,
+            end = horizontalPadding,
             bottom = afterPadding,
         ),
         verticalArrangement = Arrangement.spacedBy(style.lineSpacing),

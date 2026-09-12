@@ -45,7 +45,9 @@ data class AMLLStyle(
     // gap: its visual rhythm comes from the wrapper's 0.4em vertical padding, so the native default
     // is zero while retaining this property for source-compatible custom spacing.
     val lineSpacing: Dp = 0.dp,
-    val horizontalPadding: Dp = 28.dp,
+    // Unspecified follows AMLL's responsive wrapper padding: 20dp at <=500dp viewport width,
+    // otherwise 1em of the measured main lyric font. Supplying a Dp value forces a fixed override.
+    val horizontalPadding: Dp = Dp.Unspecified,
     val verticalPadding: Dp = 120.dp,
     // Legacy bootstrap option retained for source compatibility. v16 uses viewport-relative
     // alignPosition + alignAnchor for automatic focus, matching upstream AMLL.
