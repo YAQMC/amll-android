@@ -35,6 +35,8 @@ data class AMLLStyle(
     val wordFadeWidthEm: Float = 1f,
     // Upstream waits five seconds after manual scrolling + inertia becomes idle before resuming auto-align.
     val autoAlignResumeDelayMs: Long = 5_000L,
+    // AMLL enables distance-based lyric blur by default; native RenderEffect is used where supported.
+    val enableBlur: Boolean = true,
     // AMLL interlude dots are compact, widely spaced and occupy their own focusable gap item.
     val interludeDotSize: Dp = 10.dp,
     val interludeDotGap: Dp = 8.dp,

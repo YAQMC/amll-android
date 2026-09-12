@@ -1,5 +1,6 @@
 package dev.yaqmc.amll.ui
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,9 +31,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +57,11 @@ fun AMLLPlayer(
 ) {
     val listState = rememberLazyListState()
     val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    // Upstream uses a 1024 CSS-pixel cutoff. screenWidthDp is the closest Android logical-pixel
+    // equivalent and keeps phone/tablet behavior stable across display densities.
+    val isNarrowViewport = configuration.screenWidthDp <= 1024
+
     val groups = remember(state.lyricLines) { groupLyricLines(state.lyricLines) }
     val interludes = remember(groups) { calculateInterludes(groups) }
     val listItems = remember(groups, interludes) { buildLyricListItems(groups, interludes) }
@@ -170,6 +178,31 @@ fun AMLLPlayer(
                         inactiveAlphaForDistance(distance, style)
                     }
 
+                    // During an interlude AMLL conceptually focuses the gap between two lines. The
+                    // next line becomes scrollToIndex while the preceding line remains the latest
+                    // highlighted line, preserving the upstream blur asymmetry around the dots.
+                    val blurScrollToIndex = when {
+                        activeInterlude != null -> {
+                            (activeInterlude.anchorGroupIndex + 1).coerceIn(0, groups.lastIndex)
+                        }
+                        activeGroupIndex >= 0 -> activeGroupIndex
+                        else -> 0
+                    }
+                    val latestHighlightedIndex = when {
+                        activeInterlude != null -> activeInterlude.anchorGroupIndex
+                        activeGroupIndex >= 0 -> activeGroupIndex
+                        else -> 0
+                    }
+                    val blurRadiusPx = resolveBlurRadiusPx(
+                        index = groupIndex,
+                        scrollToIndex = blurScrollToIndex,
+                        latestHighlightedIndex = latestHighlightedIndex,
+                        isFocused = active,
+                        autoAlignSuspended = autoAlignSuspended,
+                        isNarrowViewport = isNarrowViewport,
+                        enabled = style.enableBlur,
+                    )
+
                     val scale by animateFloatAsState(
                         targetValue = targetScale,
                         animationSpec = spring(stiffness = 260f, dampingRatio = 0.82f),
@@ -188,6 +221,7 @@ fun AMLLPlayer(
                         style = style,
                         scale = scale,
                         alpha = alpha,
+                        blurRadiusPx = blurRadiusPx,
                         onLineClick = onLineClick,
                     )
                 }
@@ -204,6 +238,7 @@ private fun LyricGroup(
     style: AMLLStyle,
     scale: Float,
     alpha: Float,
+    blurRadiusPx: Float,
     onLineClick: ((LyricLine) -> Unit)?,
 ) {
     val main = group.main
@@ -223,6 +258,18 @@ private fun LyricGroup(
                     TransformOrigin(1f, 0.5f)
                 } else {
                     TransformOrigin(0f, 0.5f)
+                }
+
+                // Android's native RenderEffect backend is available from API 31. On older
+                // versions we deliberately keep only AMLL's opacity/scale falloff instead of
+                // software-blurring whole lyric groups every frame.
+                renderEffect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurRadiusPx > 0.01f) {
+                    BlurEffect(
+                        radiusX = blurRadiusPx,
+                        radiusY = blurRadiusPx,
+                    )
+                } else {
+                    null
                 }
             }
             .pointerInput(main, onLineClick) {
