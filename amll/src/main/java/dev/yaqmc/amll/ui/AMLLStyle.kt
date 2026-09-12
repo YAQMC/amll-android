@@ -2,6 +2,7 @@ package dev.yaqmc.amll.ui
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -15,6 +16,9 @@ data class AMLLStyle(
     val secondaryActiveColor: Color = Color.White.copy(alpha = 0.30f),
     val secondaryInactiveColor: Color = Color.White.copy(alpha = 0.30f),
     val lineFontSize: TextUnit = 34.sp,
+    // react-full exposes lyric font-weight on the player root and defaults it to CSS weight 600.
+    // Main, sub and background lyric content therefore inherit the same stable metric weight.
+    val lyricFontWeight: FontWeight = FontWeight.SemiBold,
     // Upstream sub-lines are 0.5em of the base lyric font: 17sp for the native 34sp default.
     val secondaryFontSize: TextUnit = 17.sp,
     // Upstream AMLL keeps the active main line at 100% and scales inactive main lines to 97%.
