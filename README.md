@@ -16,12 +16,13 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 - Media-time-derived word float and long-word emphasis motion
 - Per-grapheme AMLL emphasis stagger, push, lift and glow
 - Manual-scroll auto-align suspension and delayed spring return
+- AMLL interlude detection and animated focusable dots
 - Android 8.0+ (`minSdk 26`), matching YAQMC's Android floor
 - API shaped so YAQMC can adapt its existing parsed lyric data directly
 
 ## Current replication status
 
-The first four AMLL-parity passes mirror several upstream behaviors instead of using generic Compose defaults:
+The first five AMLL-parity passes mirror several upstream behaviors instead of using generic Compose defaults:
 
 - active main line scale: `1.0`
 - inactive main line scale: `0.97`
@@ -37,9 +38,10 @@ The first four AMLL-parity passes mirror several upstream behaviors instead of u
 - character glow strength/radius follows AMLL's duration-derived formula; Android 8-30 use a small native multi-sample halo instead of API-31-only `RenderEffect`
 - word and character transforms are derived directly from playback time, so seeking reconstructs the same visual state deterministically
 - direct user dragging suspends automatic focus movement; Android's native LazyColumn fling runs to completion, then auto-align resumes after AMLL's five-second idle delay
-- CI builds the library/demo and runs native word-motion/grouping unit tests
+- lyric gaps of at least four seconds become focusable interlude items; their three dots use AMLL's exponential entrance, breathing pulse, staged brightening and back-eased exit
+- CI builds the library/demo and runs native word-motion/grouping/interlude unit tests
 
-This is still an early renderer. Pixel-identical text-shadow blur, interlude dots, ruby/per-word romanization, distance blur, and exact line-layout parity remain future work.
+This is still an early renderer. Pixel-identical text-shadow blur, ruby/per-word romanization, distance blur, and exact line-layout parity remain future work.
 
 ## Non-goals for the first milestone
 
