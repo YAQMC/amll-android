@@ -23,7 +23,7 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 
 ## Current replication status
 
-The first sixteen AMLL-parity passes now cover the main timing, annotation, interaction and focus-motion paths instead of relying on generic Compose defaults:
+The first seventeen AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion and measured line-layout paths instead of relying on generic Compose defaults:
 
 - active/inactive main-line scale follows AMLL's `1.0 / 0.97` behavior
 - background lyrics stay grouped with their primary line rather than becoming independent scroll targets
@@ -47,9 +47,12 @@ The first sixteen AMLL-parity passes now cover the main timing, annotation, inte
 - automatic focus defaults to AMLL's viewport-relative `Center @ 0.35` alignment instead of a fixed dp offset
 - Top / Center / Bottom focus anchors are supported and use the target item's measured height like upstream layout
 - leading/trailing list space expands from the real composed viewport size so the first and last lyric items can also reach the configured focus anchor
-- CI builds the library/demo and runs the native grouping, word-motion, annotation, interlude, interaction, spring, seek and focus-geometry unit tests
+- lyric-group vertical rhythm now comes from AMLL's measured `0.4em` wrapper padding and `0.3em` main/background gap rather than a fixed global dp gap
+- secondary lyric defaults follow AMLL's `0.5em` font, `0.75em` total line-height and 0.3 opacity hierarchy
+- songs containing duet lines measure each speaker at 85% content width on the correct side, so wrapping and group height follow AMLL's 15% opposite-speaker inset
+- CI builds the library/demo and runs the native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry and line-layout unit tests
 
-The renderer is still evolving. Remaining fidelity work includes pixel-identical CSS-style text-shadow blur/glow, deeper exact line-layout/measurement parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, and additional platform-specific performance tuning.
+The renderer is still evolving. Remaining fidelity work includes pixel-identical CSS-style text-shadow blur/glow, exact background-vocal occupied-height expansion during its slide spring, responsive wrapper-horizontal-padding parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, and additional platform-specific performance tuning.
 
 ## Non-goals for the first milestone
 
