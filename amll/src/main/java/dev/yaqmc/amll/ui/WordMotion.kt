@@ -58,9 +58,10 @@ internal fun wordMotionAt(
 }
 
 /**
- * Native equivalent of upstream `createEmphasizeAnimation()` for one grapheme. The character
- * delay, scale pulse, horizontal push, vertical lift and glow strength all follow AMLL's formulas.
- * The returned transform is additive on top of [wordMotionAt].
+ * Native equivalent of upstream `createEmphasizeAnimation()` for one grapheme. [word] may be the
+ * synthetic merged timing word of a render chunk while the caller keeps each child word's regular
+ * float independent. [forceEmphasize] is used when upstream's `chunk.some(shouldEmphasize)` rule
+ * activates a merged wrapper even if the synthetic merged word itself falls outside the text rule.
  */
 internal fun characterMotionAt(
     word: LyricWord,
@@ -69,8 +70,11 @@ internal fun characterMotionAt(
     totalCharacters: Int,
     isBackground: Boolean,
     isLastWord: Boolean,
+    forceEmphasize: Boolean = false,
 ): CharacterMotion {
-    if (!shouldEmphasize(word) || totalCharacters <= 0) return CharacterMotion()
+    if ((!forceEmphasize && !shouldEmphasize(word)) || totalCharacters <= 0) {
+        return CharacterMotion()
+    }
 
     val params = emphasisParams(word, isLastWord)
     val anchorCount = max(1, totalCharacters)
