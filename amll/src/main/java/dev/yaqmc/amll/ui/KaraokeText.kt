@@ -44,6 +44,15 @@ internal fun KaraokeText(
 ) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
+    val solidColor = inactiveColor.copy(
+        alpha = inactiveColor.alpha * AMLL_SOLID_MASK_ALPHA / AMLL_GRADIENT_DARK_MASK_ALPHA,
+    )
+    val maskColors = animateLyricMaskColors(
+        active = active,
+        solidColor = solidColor,
+        brightColor = activeColor,
+        darkColor = inactiveColor,
+    )
     val renderPlan = remember(line.words) { chunkAndSplitLyricWords(line.words) }
     val renderWords = renderPlan.words
     val annotationStyle = remember(style) {
@@ -147,7 +156,7 @@ internal fun KaraokeText(
         ) {
             if (renderWords.isEmpty() || balanced.text.isEmpty()) {
                 withTransform({ translate(top = rubyReservePx) }) {
-                    drawText(layout, color = inactiveColor)
+                    drawText(layout, color = maskColors.dark)
                 }
                 return@Canvas
             }
@@ -204,8 +213,8 @@ internal fun KaraokeText(
                                 fontSizePx = fontSizePx,
                                 baseTranslateX = baseTranslateX,
                                 baseTranslateY = baseTranslateY,
-                                activeColor = activeColor,
-                                inactiveColor = inactiveColor,
+                                activeColor = maskColors.bright,
+                                inactiveColor = maskColors.dark,
                             )
                         }
                     } else {
@@ -217,8 +226,8 @@ internal fun KaraokeText(
                             baseTranslateX = baseTranslateX,
                             baseTranslateY = baseTranslateY,
                             active = active,
-                            activeColor = activeColor,
-                            inactiveColor = inactiveColor,
+                            activeColor = maskColors.bright,
+                            inactiveColor = maskColors.dark,
                         )
                     }
 
@@ -233,8 +242,8 @@ internal fun KaraokeText(
                             annotationGapPx = annotationGapPx,
                             positionMs = positionMs,
                             active = active,
-                            activeColor = activeColor,
-                            inactiveColor = inactiveColor,
+                            activeColor = maskColors.bright,
+                            inactiveColor = maskColors.dark,
                         )
                     }
                     chunkCharacterIndex += geometry.characters.size
