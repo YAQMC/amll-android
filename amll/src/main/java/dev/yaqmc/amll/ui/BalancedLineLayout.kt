@@ -80,8 +80,11 @@ internal fun calculateBalancedBreaks(
             if (j < n) {
                 val previous = children[j - 1]
                 val previousTrimmed = previous.text.trimEnd()
+                val endsWithPunctuation = previousTrimmed.lastOrNull()?.let {
+                    it in punctuationEndChars
+                } == true
                 breakPenalty = when {
-                    previousTrimmed.lastOrNull() in punctuationEndChars -> {
+                    endsWithPunctuation -> {
                         val reward = safeWidth * PUNCTUATION_BREAK_REWARD_RATIO
                         -(reward * reward)
                     }
