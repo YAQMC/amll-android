@@ -11,6 +11,7 @@ import dev.yaqmc.amll.model.LyricLine
 class AMLLPlayerState(
     lyricLines: List<LyricLine> = emptyList(),
     initialPositionMs: Long = 0L,
+    initialIsPlaying: Boolean = true,
 ) {
     private var _lyricLines: List<LyricLine> by mutableStateOf(
         lyricLines.sortedBy(LyricLine::startTimeMs)
@@ -22,11 +23,18 @@ class AMLLPlayerState(
     var positionMs: Long by mutableLongStateOf(initialPositionMs.coerceAtLeast(0L))
         private set
 
+    var isPlaying: Boolean by mutableStateOf(initialIsPlaying)
+        private set
+
     val activeLineIndex: Int
         get() = findActiveLineIndex(_lyricLines, positionMs)
 
     fun setLyricLines(lines: List<LyricLine>) {
         _lyricLines = lines.sortedBy(LyricLine::startTimeMs)
+    }
+
+    fun setPlaying(isPlaying: Boolean) {
+        this.isPlaying = isPlaying
     }
 
     fun seekTo(positionMs: Long) {
@@ -55,13 +63,9 @@ internal fun findActiveLineIndex(lines: List<LyricLine>, positionMs: Long): Int 
 
     if (candidate < 0) return lines.indexOfFirst { !it.isBackground }.takeIf { it >= 0 } ?: 0
 
-    // Background-vocal lines belong to the preceding primary line. If a background line
-    // shares (or slightly trails) its primary line's start time, keep the primary line as
-    // the active scroll/focus target and render the background line alongside it.
     while (candidate > 0 && lines[candidate].isBackground) {
         candidate--
     }
 
-    // Keep the just-finished line active through an inter-line gap, matching music-player UX.
     return candidate
 }
