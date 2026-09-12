@@ -2,7 +2,6 @@ package dev.yaqmc.amll.ui
 
 import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -204,6 +203,7 @@ fun AMLLPlayer(
         listItems.size,
         style.alignPosition,
         style.alignAnchor,
+        style.enableSpring,
         autoAlignSuspended,
         focusIntervalMs,
         activeInterlude,
@@ -261,7 +261,8 @@ fun AMLLPlayer(
             if (abs(delta) > 0.5f) {
                 listState.animateScrollBy(
                     value = delta,
-                    animationSpec = spring(
+                    animationSpec = amllTransformAnimationSpec(
+                        enableSpring = style.enableSpring,
                         dampingRatio = linePosSpring.dampingRatio,
                         stiffness = linePosSpring.stiffness,
                     ),
@@ -458,7 +459,8 @@ private fun LyricGroup(
             activeScale = style.activeScale,
             inactiveScale = style.inactiveScale,
         ),
-        animationSpec = spring(
+        animationSpec = amllTransformAnimationSpec(
+            enableSpring = style.enableSpring,
             stiffness = mainScaleSpec.stiffness,
             dampingRatio = mainScaleSpec.dampingRatio,
         ),
