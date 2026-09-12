@@ -23,8 +23,10 @@ data class AMLLStyle(
     val activeAlpha: Float = 1f,
     val inactiveAlpha: Float = 0.52f,
     val farInactiveAlpha: Float = 0.24f,
-    // Upstream background vocals are rendered at ~0.7em and stay intentionally subdued.
+    // Upstream background vocals render at ~0.7em. Their lyric-line transform additionally
+    // scales inactive playing rows to 75%, independently from the wrapper's 0.8 slide scale.
     val backgroundLineScale: Float = 0.70f,
+    val backgroundInactiveScale: Float = 0.75f,
     val backgroundAlpha: Float = 0.40f,
     // Kept for source compatibility with the bootstrap; v8 derives actual slide distance from
     // the background row height like AMLL (80 slide units == 80% of row height).

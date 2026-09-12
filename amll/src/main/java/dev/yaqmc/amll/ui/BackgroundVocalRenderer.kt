@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -25,8 +26,9 @@ private val CssEase = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
  * Background-vocal renderer driven by the same vertical spring policy as lyric focus motion.
  *
  * This intentionally keeps the background measured even when hidden. Upstream does the same and
- * derives translation, scale and (for a background-first wrapper) occupied layout height from that
- * measured height on every spring frame.
+ * derives translation, wrapper scale and (for a background-first wrapper) occupied layout height
+ * from that measured height on every spring frame. The lyric line itself has a second, independent
+ * 100%/75% scale spring, matching upstream `scaleForBGSpringParams`.
  */
 @Composable
 internal fun AMLLBackgroundVocal(
@@ -57,6 +59,15 @@ internal fun AMLLBackgroundVocal(
         ),
         label = "amll-background-wrapper-alpha",
     )
+    val lineScaleSpec = backgroundLineScaleSpringSpec()
+    val lineScale by animateFloatAsState(
+        targetValue = if (active || !isPlaying) 1f else style.backgroundInactiveScale,
+        animationSpec = spring(
+            stiffness = lineScaleSpec.stiffness,
+            dampingRatio = lineScaleSpec.dampingRatio,
+        ),
+        label = "amll-background-line-scale",
+    )
     val frame = backgroundVocalFrame(slideY)
     val alignment = if (mainIsDuet) Alignment.End else Alignment.Start
     val textAlign = if (mainIsDuet) TextAlign.End else TextAlign.Start
@@ -71,7 +82,13 @@ internal fun AMLLBackgroundVocal(
         modifier = Modifier.fillMaxWidth(),
         content = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        scaleX = lineScale
+                        scaleY = lineScale
+                        transformOrigin = TransformOrigin(originX, 0.5f)
+                    },
                 horizontalAlignment = alignment,
             ) {
                 KaraokeText(

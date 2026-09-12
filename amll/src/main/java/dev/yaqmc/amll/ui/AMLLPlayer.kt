@@ -333,11 +333,6 @@ fun AMLLPlayer(
                         else -> 0
                     }
                     val distance = abs(groupIndex - referenceGroupIndex)
-                    val targetScale = if (active || !state.isPlaying) {
-                        style.activeScale
-                    } else {
-                        style.inactiveScale
-                    }
                     val targetAlpha = if (active) {
                         style.activeAlpha
                     } else {
@@ -366,11 +361,6 @@ fun AMLLPlayer(
                         enabled = style.enableBlur,
                     )
 
-                    val scale by animateFloatAsState(
-                        targetValue = targetScale,
-                        animationSpec = spring(stiffness = 260f, dampingRatio = 0.82f),
-                        label = "amll-line-scale",
-                    )
                     val alpha by animateFloatAsState(
                         targetValue = targetAlpha,
                         animationSpec = spring(stiffness = 310f, dampingRatio = 0.88f),
@@ -385,7 +375,6 @@ fun AMLLPlayer(
                         style = style,
                         hasDuetLine = hasDuetLine,
                         linePosSpring = linePosSpring,
-                        scale = scale,
                         alpha = alpha,
                         blurRadiusPx = blurRadiusPx,
                         onLineClick = onLineClick,
@@ -405,7 +394,6 @@ private fun LyricGroup(
     style: AMLLStyle,
     hasDuetLine: Boolean,
     linePosSpring: FocusSpringSpec,
-    scale: Float,
     alpha: Float,
     blurRadiusPx: Float,
     onLineClick: ((LyricLine) -> Unit)?,
@@ -423,6 +411,15 @@ private fun LyricGroup(
     }
     val groupVerticalPadding = with(density) { lineLayout.groupVerticalPaddingPx.toDp() }
     val subLineHeight = style.lineFontSize * AMLL_SUBLINE_LINE_HEIGHT_EM
+    val mainScaleSpec = mainLineScaleSpringSpec()
+    val mainScale by animateFloatAsState(
+        targetValue = if (active || !isPlaying) style.activeScale else style.inactiveScale,
+        animationSpec = spring(
+            stiffness = mainScaleSpec.stiffness,
+            dampingRatio = mainScaleSpec.dampingRatio,
+        ),
+        label = "amll-main-line-scale",
+    )
 
     Column(
         modifier = Modifier
@@ -433,15 +430,7 @@ private fun LyricGroup(
             .fillMaxWidth()
             .padding(vertical = groupVerticalPadding)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
                 this.alpha = alpha
-                transformOrigin = if (main.isDuet) {
-                    TransformOrigin(1f, 0.5f)
-                } else {
-                    TransformOrigin(0f, 0.5f)
-                }
-
                 renderEffect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurRadiusPx > 0.01f) {
                     BlurEffect(radiusX = blurRadiusPx, radiusY = blurRadiusPx)
                 } else {
@@ -469,38 +458,53 @@ private fun LyricGroup(
             )
         }
 
-        KaraokeText(
-            line = main,
-            positionMs = positionMs,
-            style = TextStyle(
-                fontSize = style.lineFontSize,
-                fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
-                textAlign = mainTextAlign,
-            ),
-            active = active,
-            activeColor = style.activeColor,
-            inactiveColor = style.inactiveColor,
-            fadeWidthEm = style.wordFadeWidthEm,
-        )
-
-        if (main.translatedLyric.isNotBlank()) {
-            Text(
-                text = main.translatedLyric,
-                color = if (active) style.secondaryActiveColor else style.secondaryInactiveColor,
-                fontSize = style.secondaryFontSize,
-                lineHeight = subLineHeight,
-                textAlign = mainTextAlign,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = mainScale
+                    scaleY = mainScale
+                    transformOrigin = if (main.isDuet) {
+                        TransformOrigin(1f, 0.5f)
+                    } else {
+                        TransformOrigin(0f, 0.5f)
+                    }
+                },
+            horizontalAlignment = mainAlignment,
+        ) {
+            KaraokeText(
+                line = main,
+                positionMs = positionMs,
+                style = TextStyle(
+                    fontSize = style.lineFontSize,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
+                    textAlign = mainTextAlign,
+                ),
+                active = active,
+                activeColor = style.activeColor,
+                inactiveColor = style.inactiveColor,
+                fadeWidthEm = style.wordFadeWidthEm,
             )
-        }
 
-        if (main.romanLyric.isNotBlank()) {
-            Text(
-                text = main.romanLyric,
-                color = if (active) style.secondaryActiveColor else style.secondaryInactiveColor,
-                fontSize = style.secondaryFontSize,
-                lineHeight = subLineHeight,
-                textAlign = mainTextAlign,
-            )
+            if (main.translatedLyric.isNotBlank()) {
+                Text(
+                    text = main.translatedLyric,
+                    color = if (active) style.secondaryActiveColor else style.secondaryInactiveColor,
+                    fontSize = style.secondaryFontSize,
+                    lineHeight = subLineHeight,
+                    textAlign = mainTextAlign,
+                )
+            }
+
+            if (main.romanLyric.isNotBlank()) {
+                Text(
+                    text = main.romanLyric,
+                    color = if (active) style.secondaryActiveColor else style.secondaryInactiveColor,
+                    fontSize = style.secondaryFontSize,
+                    lineHeight = subLineHeight,
+                    textAlign = mainTextAlign,
+                )
+            }
         }
 
         if (background != null && !backgroundFirst) {
