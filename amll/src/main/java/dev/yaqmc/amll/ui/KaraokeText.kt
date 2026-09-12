@@ -144,7 +144,7 @@ internal fun KaraokeText(
                         WordMotion()
                     }
 
-                    if (active && chunk.shouldEmphasize && geometry.characters.isNotEmpty()) {
+                    if (active && chunk.emphasized && geometry.characters.isNotEmpty()) {
                         geometry.characters.forEachIndexed { localCharacterIndex, character ->
                             val characterMotion = characterMotionAt(
                                 word = chunk.emphasisWord,
