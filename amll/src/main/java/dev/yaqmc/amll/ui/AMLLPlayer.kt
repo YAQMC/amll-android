@@ -1,16 +1,8 @@
 package dev.yaqmc.amll.ui
 
 import android.os.Build
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -46,7 +38,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import dev.yaqmc.amll.model.LyricLine
 import dev.yaqmc.amll.state.AMLLPlayerState
 import kotlinx.coroutines.delay
@@ -127,6 +118,12 @@ fun AMLLPlayer(
         }
     }
 
+    val linePosSpring = focusSpringSpec(
+        isSeeking = lastSeekPositionMs == state.positionMs,
+        isInterludeActive = activeInterlude != null,
+        intervalMs = focusIntervalMs,
+    )
+
     var autoAlignSuspended by remember { mutableStateOf(false) }
     var touchPointerDown by remember { mutableStateOf(false) }
     var lastManualInput by remember { mutableStateOf<ManualScrollInputType?>(null) }
@@ -178,12 +175,6 @@ fun AMLLPlayer(
         if (focusItemIndex !in listItems.indices) return@LaunchedEffect
         if (measuredViewportHeightPx <= 0) return@LaunchedEffect
 
-        val focusSpring = focusSpringSpec(
-            isSeeking = lastSeekPositionMs == state.positionMs,
-            isInterludeActive = activeInterlude != null,
-            intervalMs = focusIntervalMs,
-        )
-
         if (listState.layoutInfo.beforeContentPadding != beforePaddingPx) {
             snapshotFlow { listState.layoutInfo.beforeContentPadding }
                 .filter { appliedPadding -> appliedPadding == beforePaddingPx }
@@ -229,8 +220,8 @@ fun AMLLPlayer(
                 listState.animateScrollBy(
                     value = delta,
                     animationSpec = spring(
-                        dampingRatio = focusSpring.dampingRatio,
-                        stiffness = focusSpring.stiffness,
+                        dampingRatio = linePosSpring.dampingRatio,
+                        stiffness = linePosSpring.stiffness,
                     ),
                 )
             }
@@ -393,6 +384,7 @@ fun AMLLPlayer(
                         positionMs = state.positionMs,
                         style = style,
                         hasDuetLine = hasDuetLine,
+                        linePosSpring = linePosSpring,
                         scale = scale,
                         alpha = alpha,
                         blurRadiusPx = blurRadiusPx,
@@ -412,6 +404,7 @@ private fun LyricGroup(
     positionMs: Long,
     style: AMLLStyle,
     hasDuetLine: Boolean,
+    linePosSpring: FocusSpringSpec,
     scale: Float,
     alpha: Float,
     blurRadiusPx: Float,
@@ -464,7 +457,7 @@ private fun LyricGroup(
     ) {
         val background = group.background
         if (background != null && backgroundFirst) {
-            BackgroundVocal(
+            AMLLBackgroundVocal(
                 line = background,
                 mainIsDuet = main.isDuet,
                 active = active,
@@ -472,6 +465,7 @@ private fun LyricGroup(
                 placedFirst = true,
                 positionMs = positionMs,
                 style = style,
+                springSpec = linePosSpring,
             )
         }
 
@@ -510,7 +504,7 @@ private fun LyricGroup(
         }
 
         if (background != null && !backgroundFirst) {
-            BackgroundVocal(
+            AMLLBackgroundVocal(
                 line = background,
                 mainIsDuet = main.isDuet,
                 active = active,
@@ -518,75 +512,7 @@ private fun LyricGroup(
                 placedFirst = false,
                 positionMs = positionMs,
                 style = style,
-            )
-        }
-    }
-}
-
-@Composable
-private fun BackgroundVocal(
-    line: LyricLine,
-    mainIsDuet: Boolean,
-    active: Boolean,
-    isPlaying: Boolean,
-    placedFirst: Boolean,
-    positionMs: Long,
-    style: AMLLStyle,
-) {
-    val alignment = if (mainIsDuet) Alignment.End else Alignment.Start
-    val textAlign = if (mainIsDuet) TextAlign.End else TextAlign.Start
-    val hiddenDirection = if (placedFirst) 1f else -1f
-    val visible = active || !isPlaying
-    val density = LocalDensity.current
-    val lineLayout = with(density) {
-        resolveAMLLLineLayoutPx(style.lineFontSize.toPx())
-    }
-    val groupContentGap = with(density) { lineLayout.groupContentGapPx.toDp() }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(220)) +
-            slideInVertically(
-                animationSpec = spring(dampingRatio = 0.82f, stiffness = 180f),
-                initialOffsetY = { height -> (height * 0.8f * hiddenDirection).roundToInt() },
-            ) +
-            scaleIn(
-                initialScale = 0.8f,
-                animationSpec = spring(dampingRatio = 0.82f, stiffness = 180f),
-            ),
-        exit = fadeOut(animationSpec = tween(180)) +
-            slideOutVertically(
-                animationSpec = spring(dampingRatio = 0.9f, stiffness = 240f),
-                targetOffsetY = { height -> (height * 0.8f * hiddenDirection).roundToInt() },
-            ) +
-            scaleOut(
-                targetScale = 0.8f,
-                animationSpec = spring(dampingRatio = 0.9f, stiffness = 240f),
-            ),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    top = if (placedFirst) 0.dp else groupContentGap,
-                    bottom = if (placedFirst) groupContentGap else 0.dp,
-                )
-                .graphicsLayer { alpha = style.backgroundAlpha },
-            horizontalAlignment = alignment,
-        ) {
-            KaraokeText(
-                line = line,
-                positionMs = positionMs,
-                style = TextStyle(
-                    fontSize = style.lineFontSize * style.backgroundLineScale,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = textAlign,
-                ),
-                active = active,
-                activeColor = style.activeColor,
-                inactiveColor = style.inactiveColor,
-                minimumHeight = 28.dp,
-                fadeWidthEm = style.wordFadeWidthEm,
+                springSpec = linePosSpring,
             )
         }
     }
