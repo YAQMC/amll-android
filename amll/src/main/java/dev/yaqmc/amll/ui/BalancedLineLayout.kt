@@ -28,14 +28,7 @@ private val punctuationEndChars = setOf(
     ')', ']', '}', '>', '~', '…',
 )
 
-/**
- * Native port of AMLL's lyric-line dynamic-programming breaker.
- *
- * The cost function minimizes line-length variance while preferring punctuation/space boundaries,
- * mildly discouraging CJK word-boundary cuts, and strongly discouraging arbitrary text cuts. A
- * single unbreakable child wider than the viewport is allowed to overflow on its own line instead
- * of being split internally.
- */
+/** Native port of AMLL's lyric-line dynamic-programming breaker. */
 internal fun calculateBalancedBreaks(
     children: List<BalancedLineChild>,
     containerWidthPx: Float,
@@ -116,10 +109,7 @@ internal fun calculateBalancedBreaks(
     return result
 }
 
-/**
- * Inserts only hard line breaks. The caller can then disable soft wrapping so every timed lyric
- * word remains atomic while TextLayoutResult still provides glyph geometry for karaoke effects.
- */
+/** Legacy helper used by layout unit tests and non-chunk callers. */
 internal fun buildBalancedLyricLayout(
     wordTexts: List<String>,
     wordWidthsPx: List<Float>,
@@ -148,6 +138,52 @@ internal fun buildBalancedLyricLayout(
     return BalancedLyricLayout(text = text, wordOffsets = offsets, breaks = breaks)
 }
 
+/**
+ * Chunk-aware layout builder used by dynamic lyrics. Newlines may only be inserted before chunks,
+ * while offsets are returned for every child timing atom so karaoke geometry remains precise.
+ */
+internal fun buildBalancedLyricLayout(
+    plan: RenderWordPlan,
+    chunkWidthsPx: List<Float>,
+    containerWidthPx: Float,
+): BalancedLyricLayout {
+    require(plan.chunks.size == chunkWidthsPx.size) {
+        "chunks and chunkWidthsPx must have the same size"
+    }
+    if (plan.chunks.isEmpty()) {
+        return BalancedLyricLayout(text = "", wordOffsets = IntArray(0), breaks = emptyList())
+    }
+
+    val children = plan.chunks.indices.map { index ->
+        val chunk = plan.chunks[index]
+        BalancedLineChild(
+            widthPx = chunkWidthsPx[index],
+            text = chunk.text,
+            isSpace = chunk.isSpace,
+        )
+    }
+    val breaks = calculateBalancedBreaks(children, containerWidthPx)
+    val breakSet = breaks.toHashSet()
+    val atomOffsets = IntArray(plan.words.size)
+    var atomIndex = 0
+
+    val text = buildString {
+        plan.chunks.forEachIndexed { chunkIndex, chunk ->
+            if (chunkIndex in breakSet) append('\n')
+            chunk.words.forEach { word ->
+                atomOffsets[atomIndex++] = length
+                append(word.text)
+            }
+        }
+    }
+
+    return BalancedLyricLayout(
+        text = text,
+        wordOffsets = atomOffsets,
+        breaks = breaks,
+    )
+}
+
 private fun cjkWordBoundaries(text: String): Set<Int> {
     if (text.isEmpty()) return emptySet()
     val iterator = BreakIterator.getWordInstance(Locale.ROOT)
@@ -174,7 +210,6 @@ private fun containsCjk(text: String, start: Int, end: Int): Boolean {
     return false
 }
 
-/** Mirrors upstream's Unified-Ideograph / broad U+0800..U+9FFC CJK test closely on the JVM. */
 private fun isCjkCodePoint(codePoint: Int): Boolean =
     codePoint in 0x0800..0x9FFC ||
         codePoint in 0x20000..0x2FA1F
