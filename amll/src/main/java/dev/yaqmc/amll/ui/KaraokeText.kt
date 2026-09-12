@@ -115,73 +115,87 @@ internal fun KaraokeText(
                 return@Canvas
             }
 
-            renderWords.forEachIndexed { wordIndex, word ->
-                val geometry = buildWordGeometry(
-                    layout = layout,
-                    word = word,
-                    wordOffset = balanced.wordOffsets.getOrElse(wordIndex) { 0 },
-                    positionMs = positionMs,
-                    fadeWidthPx = fadeWidthPx,
-                )
-
-                val wordMotion = if (active) {
-                    wordMotionAt(
+            var atomIndex = 0
+            renderPlan.chunks.forEachIndexed { chunkIndex, chunk ->
+                val chunkStartAtom = atomIndex
+                val geometries = chunk.words.mapIndexed { localIndex, word ->
+                    val globalIndex = chunkStartAtom + localIndex
+                    buildWordGeometry(
+                        layout = layout,
                         word = word,
+                        wordOffset = balanced.wordOffsets.getOrElse(globalIndex) { 0 },
                         positionMs = positionMs,
-                        isBackground = line.isBackground,
+                        fadeWidthPx = fadeWidthPx,
                     )
-                } else {
-                    WordMotion()
                 }
+                val totalChunkCharacters = geometries.sumOf { it.characters.size }
+                var chunkCharacterIndex = 0
 
-                if (active && shouldEmphasize(word) && geometry.characters.isNotEmpty()) {
-                    geometry.characters.forEachIndexed { characterIndex, character ->
-                        val characterMotion = characterMotionAt(
+                chunk.words.forEachIndexed { localIndex, word ->
+                    val globalIndex = chunkStartAtom + localIndex
+                    val geometry = geometries[localIndex]
+                    val wordMotion = if (active) {
+                        wordMotionAt(
                             word = word,
                             positionMs = positionMs,
-                            characterIndex = characterIndex,
-                            totalCharacters = geometry.characters.size,
                             isBackground = line.isBackground,
-                            isLastWord = wordIndex == renderWords.lastIndex,
                         )
-                        drawCharacter(
+                    } else {
+                        WordMotion()
+                    }
+
+                    if (active && chunk.shouldEmphasize && geometry.characters.isNotEmpty()) {
+                        geometry.characters.forEachIndexed { localCharacterIndex, character ->
+                            val characterMotion = characterMotionAt(
+                                word = chunk.emphasisWord,
+                                positionMs = positionMs,
+                                characterIndex = chunkCharacterIndex + localCharacterIndex,
+                                totalCharacters = totalChunkCharacters,
+                                isBackground = line.isBackground,
+                                isLastWord = chunkIndex == renderPlan.lastContentChunkIndex,
+                                forceEmphasize = true,
+                            )
+                            drawCharacter(
+                                layout = layout,
+                                geometry = character,
+                                wordMotion = wordMotion,
+                                characterMotion = characterMotion,
+                                fontSizePx = fontSizePx,
+                                baseOffsetY = baseOffsetY,
+                                activeColor = activeColor,
+                                inactiveColor = inactiveColor,
+                            )
+                        }
+                    } else {
+                        drawWord(
                             layout = layout,
-                            geometry = character,
-                            wordMotion = wordMotion,
-                            characterMotion = characterMotion,
+                            geometry = geometry,
+                            motion = wordMotion,
                             fontSizePx = fontSizePx,
                             baseOffsetY = baseOffsetY,
+                            active = active,
                             activeColor = activeColor,
                             inactiveColor = inactiveColor,
                         )
                     }
-                } else {
-                    drawWord(
-                        layout = layout,
-                        geometry = geometry,
-                        motion = wordMotion,
-                        fontSizePx = fontSizePx,
-                        baseOffsetY = baseOffsetY,
-                        active = active,
-                        activeColor = activeColor,
-                        inactiveColor = inactiveColor,
-                    )
-                }
 
-                geometry.bounds?.let { bounds ->
-                    drawWordAnnotations(
-                        word = word,
-                        layout = annotations.getOrElse(wordIndex) { WordAnnotationLayout() },
-                        baseBounds = bounds,
-                        baseOffsetY = baseOffsetY,
-                        wordTranslateY = wordMotion.translateYEm * fontSizePx,
-                        annotationGapPx = annotationGapPx,
-                        positionMs = positionMs,
-                        active = active,
-                        activeColor = activeColor,
-                        inactiveColor = inactiveColor,
-                    )
+                    geometry.bounds?.let { bounds ->
+                        drawWordAnnotations(
+                            word = word,
+                            layout = annotations.getOrElse(globalIndex) { WordAnnotationLayout() },
+                            baseBounds = bounds,
+                            baseOffsetY = baseOffsetY,
+                            wordTranslateY = wordMotion.translateYEm * fontSizePx,
+                            annotationGapPx = annotationGapPx,
+                            positionMs = positionMs,
+                            active = active,
+                            activeColor = activeColor,
+                            inactiveColor = inactiveColor,
+                        )
+                    }
+                    chunkCharacterIndex += geometry.characters.size
                 }
+                atomIndex += chunk.words.size
             }
         }
     }
