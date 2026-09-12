@@ -96,7 +96,7 @@ LaunchedEffect(player) {
 }
 ```
 
-播放器能多频繁提供位置就多频繁推送。AMLL 的 seek/stall 推导会消费每次 position sample，包括数值相同的重复 sample。
+播放器能多频繁提供位置就多频繁推送。默认开启的 AMLL auto-seek 推导会观察每次 position sample，包括数值相同的重复 sample；明确的宿主 seek 则应单独使用 `state.seekTo(...)`。
 
 ## 3. 歌词数据模型
 
@@ -231,7 +231,33 @@ player.seekTo(targetMs)
 state.seekTo(targetMs)
 ```
 
-第一步修改真实播放器，第二步让歌词 UI 立刻跳到目标时间。之后继续用真实播放器的位置回调驱动 `state.update(...)`。
+第一步修改真实播放器，第二步让歌词 UI 立刻跳到目标时间并明确标记为 host seek。之后继续用真实播放器的位置回调驱动 `state.update(...)`。
+
+普通 `state.update(...)` 和明确的 `state.seekTo(...)` 在内部是两条不同语义：前者只是播放时钟 sample，后者即使在自动 seek 检测关闭时也始终会触发 seek-motion 语义。
+
+### 自动 Seek 推导
+
+默认与 AMLL 一样开启：
+
+```kotlin
+val state = remember {
+    AMLLPlayerState(initialAutoSeekDetectionEnabled = true)
+}
+```
+
+如果宿主播放时钟粒度太粗，频繁被自动 drift detector 识别成 seek，可以关闭自动推导：
+
+```kotlin
+state.updateAutoSeekDetectionEnabled(false)
+```
+
+再次开启：
+
+```kotlin
+state.updateAutoSeekDetectionEnabled(true)
+```
+
+切换开关会重置 detector 基线。关闭时 renderer 不再调用自动 detector，但显式 `state.seekTo(...)` 仍然始终有效；这与当前 upstream `setCurrentTime()` 的运行时代码一致。
 
 ## 6. YAQMC DTO 适配
 
@@ -286,6 +312,7 @@ val lyricStyle = AMLLStyle(
     lyricFontWeight = FontWeight.SemiBold,
     enableBlur = true,
     enableScale = true,
+    enableSpring = true,
     hidePassedLines = false,
     wordFadeWidthEm = 1f,
     alignPosition = 0.35f,
@@ -311,6 +338,7 @@ AMLLPlayer(
 | `alwaysPostpositionBackground` | 背景人声是否强制后置 | `false` |
 | `enableBlur` | 距离模糊 | `true` |
 | `enableScale` | 是否启用主歌词 inactive 97% 缩放 | `true`；不影响背景歌词独立的 75% scale |
+| `enableSpring` | 是否启用物理弹簧 transform | `true`；关闭后按 upstream 回退为 500ms CSS `ease` transform transition |
 | `hidePassedLines` | 播放时隐藏已经越过焦点边界的歌词 | `false`；暂停时旧行会恢复 |
 | `wordFadeWidthEm` | 连续逐词 bright→dark gradient 的过渡宽度 | `1em`，Android-like |
 | `horizontalPadding` | 歌词 wrapper 左右留白 | 默认响应式：容器宽度 `<=500dp` 为 `20dp`，否则 `1em`；显式 Dp 为固定覆盖 |
@@ -362,10 +390,11 @@ fun NativeFullScreenLyrics(
 - 一个歌词页面保持一个 `AMLLPlayerState`，不要每个 position tick 重建 state。
 - 换歌时调用 `setLyricLines(newLines)`，并立即 `seekTo()` 或等待真实 position sample 校准。
 - 不需要为了 renderer 自己再启动高频 timer；优先使用真实 audio engine / MediaSession 的位置时钟。
-- 如果宿主只能低频提供 position，renderer 仍可工作，但逐词运动和 seek 判定精度会随采样精度下降。
+- 如果宿主只能低频提供 position，renderer 仍可工作，但逐词运动和 seek 判定精度会随采样精度下降；必要时可关闭 auto seek detection，但真实跳转仍应调用 `state.seekTo(...)`。
 - API 31+ 使用原生 blur effect；Android 8-11 会保留其它视觉层级而不强行使用不可用的 Gaussian RenderEffect。
 - 手动触摸/滚轮滚动会暂停 auto-align；滚动与惯性停止后默认再等待 5 秒恢复。
 - `horizontalPadding = Dp.Unspecified` 是默认值，表示使用 AMLL 的响应式 20dp/1em 规则；只有确实需要固定边距时再显式传 Dp。
+- `enableSpring = false` 不会让 transform 瞬移；主歌词 scale、背景 slide/scale 与精确 focus correction 会统一回退到 500ms CSS-ease 风格 transition。
 
 ## 10. 当前边界
 
@@ -374,7 +403,7 @@ fun NativeFullScreenLyrics(
 - CSS text-shadow/glow 的像素级一致性；
 - ruby/逐词 roman annotation 的 mask/DOM 几何还存在少量实现差异；
 - bottom-line / end-of-song focus，需要宿主提供可靠 duration/end signal；
-- 部分上游配置开关（例如 auto seek detection / spring fallback）尚未全部暴露；
+- 其它较少使用的上游配置与平台细节仍可继续补齐；
 - 更多针对实际 YAQMC 大型歌词数据的性能压测。
 
 这些不会改变上面的核心接入方式；后续 parity 更新应尽量保持 `LyricLine -> AMLLPlayerState -> AMLLPlayer` 这一层 API 稳定。

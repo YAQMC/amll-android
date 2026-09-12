@@ -23,15 +23,16 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 
 ## Current replication status
 
-The first twenty-six AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity, mask and responsive-wrapper behavior instead of relying on generic Compose defaults:
+The first twenty-eight AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity, mask, responsive-wrapper and playback-control behavior instead of relying on generic Compose defaults:
 
 - active/inactive main-line scale follows AMLL's `1.0 / 0.97` behavior using the upstream physical scale spring
 - `enableScale` mirrors upstream `setEnableScale()` and disables only the main-line 97% treatment; background-vocal 75% inactive scale remains independent
+- `enableSpring` mirrors upstream `setEnableSpring()`; disabling physical springs falls back to AMLL's 500ms CSS `ease` transform transition rather than snapping transforms
 - background lyrics stay grouped with their primary line rather than becoming independent scroll targets
 - background-vocal size/opacity, first-word ordering and always-postposition behavior follow AMLL's grouped presentation model
 - background-vocal wrapper motion is driven by the same dynamic vertical spring policy as AMLL's `bgSlideY`, including `+80 / -80 -> 0`, measured-height translation and `0.8 -> 1.0` wrapper scale
-- background-first vocals unfold their occupied measured height with the slide spring; post-positioned vocals keep AMLL's in-flow/out-of-flow visibility semantics
-- background lyric lines have their own independent `1.0 / 0.75` scale spring instead of inheriting the main line's `0.97` scale
+- background-first vocals unfold their occupied measured height with the slide transform; post-positioned vocals keep AMLL's in-flow/out-of-flow visibility semantics
+- background lyric lines have their own independent `1.0 / 0.75` transform instead of inheriting the main line's `0.97` scale
 - word highlighting uses AMLL's continuous word-level bright-to-dark gradient with the Android-like `1em` fade-width default
 - gradient geometry uses measured word height for fade width and keeps AMLL's half-fade lead-in/tail around each timed word
 - AMLL SOLID/GRADIENT mask endpoints use the upstream alpha targets (`0.2`, `1.0`, `0.4`) and mode-specific `450ms / 300ms ease-out` transitions
@@ -44,13 +45,15 @@ The first twenty-six AMLL-parity passes now cover the main timing, annotation, i
 - ruby annotations and per-word romanization participate in merged word layout and ruby character count drives AMLL emphasis stagger anchors
 - annotation layout reserves explicit above-baseline space so ruby/romanized text does not distort main-word timing geometry
 - word/character motion is reconstructed directly from media time, so seeking is deterministic rather than free-running
+- ordinary playback-clock `update(...)` samples are distinct from explicit host `seekTo(...)` calls, so explicit seeks always use seek-motion semantics
+- automatic seek inference can be enabled/disabled on `AMLLPlayerState`; changing the flag resets the detector baseline while explicit seeks remain authoritative
+- playback seek inference ports AMLL's monotonic wall-clock detector, including jitter/drift tolerance and repeated equal-position samples while automatic detection is enabled
 - distance-based lyric blur is derived from focus distance; supported Android versions use native blur effects
 - lyric gaps become focusable AMLL-style interlude dot items with timed entrance/breathing/brightening/exit motion
 - touch scrolling only suspends auto-follow after AMLL's `> 10px` intent threshold; wheel input uses the upstream-style idle debounce
 - native Android drag/fling physics remain owned by `LazyColumn`; the five-second auto-align delay starts only after physical scrolling is actually idle
 - repeated touch input, tap interruptions and multi-touch re-anchoring restart the same suspension lifecycle without consuming native pointer events
-- focus scrolling uses AMLL's interval-adaptive vertical spring policy; seek/interlude motion switches to the slower upstream spring
-- playback seek inference ports AMLL's monotonic wall-clock detector, including jitter/drift tolerance and repeated equal-position samples
+- focus scrolling uses AMLL's interval-adaptive vertical spring policy; seek/interlude motion switches to the slower upstream spring, or the shared 500ms transform fallback when springs are disabled
 - automatic focus defaults to AMLL's viewport-relative `Center @ 0.35` alignment instead of a fixed dp offset
 - Top / Center / Bottom focus anchors are supported and use the target item's measured height like upstream layout
 - leading/trailing list space expands from the real composed viewport size so the first and last lyric items can also reach the configured focus anchor
@@ -59,9 +62,9 @@ The first twenty-six AMLL-parity passes now cover the main timing, annotation, i
 - secondary lyric defaults follow AMLL's `0.5em` font, `0.75em` total line-height and 0.3 opacity hierarchy
 - songs containing duet lines measure each speaker at 85% content width on the correct side, so wrapping and group height follow AMLL's 15% opposite-speaker inset
 - lyric typography uses the react-full default weight 600 consistently across main, secondary and background content; active-state changes no longer alter glyph metrics or wrapping
-- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, line-layout, background-motion, line-scale, opacity, continuous-mask, responsive-padding, behavior-flag and typography unit tests
+- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, line-layout, background-motion, line-scale, opacity, continuous-mask, responsive-padding, behavior-flag, transform-policy and typography unit tests
 
-The renderer is still evolving. Remaining fidelity work includes pixel-identical CSS-style text-shadow blur/glow, deeper ruby/roman annotation-mask parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, optional upstream behavior/config switches that are not yet surfaced, and additional platform-specific performance tuning.
+The renderer is still evolving. Remaining fidelity work includes pixel-identical CSS-style text-shadow blur/glow, deeper ruby/roman annotation-mask parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, additional upstream configuration parity where useful, and platform-specific performance tuning.
 
 ## Non-goals for the first milestone
 
