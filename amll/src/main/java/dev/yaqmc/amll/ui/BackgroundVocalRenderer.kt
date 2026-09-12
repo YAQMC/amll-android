@@ -1,8 +1,6 @@
 package dev.yaqmc.amll.ui
 
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,8 +16,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.yaqmc.amll.model.LyricLine
 import kotlin.math.roundToInt
-
-private val CssEase = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
 
 /**
  * Background-vocal renderer driven by the same vertical spring policy as lyric focus motion.
@@ -44,7 +40,8 @@ internal fun AMLLBackgroundVocal(
     val hiddenSlideY = backgroundHiddenSlideY(placedFirst)
     val slideY by animateFloatAsState(
         targetValue = if (visible) 0f else hiddenSlideY,
-        animationSpec = spring(
+        animationSpec = amllTransformAnimationSpec(
+            enableSpring = style.enableSpring,
             dampingRatio = springSpec.dampingRatio,
             stiffness = springSpec.stiffness,
         ),
@@ -54,14 +51,15 @@ internal fun AMLLBackgroundVocal(
         targetValue = if (visible) 1f else 0f,
         animationSpec = tween(
             durationMillis = 300,
-            easing = CssEase,
+            easing = AMLL_CSS_EASE,
         ),
         label = "amll-background-wrapper-alpha",
     )
     val lineScaleSpec = backgroundLineScaleSpringSpec()
     val lineScale by animateFloatAsState(
         targetValue = if (active || !isPlaying) 1f else style.backgroundInactiveScale,
-        animationSpec = spring(
+        animationSpec = amllTransformAnimationSpec(
+            enableSpring = style.enableSpring,
             stiffness = lineScaleSpec.stiffness,
             dampingRatio = lineScaleSpec.dampingRatio,
         ),

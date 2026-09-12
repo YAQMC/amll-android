@@ -71,4 +71,7 @@ data class AMLLStyle(
     // Upstream default layoutConfig: Center anchor at 35% of the viewport height.
     val alignPosition: Float = 0.35f,
     val alignAnchor: AMLLAlignAnchor = AMLLAlignAnchor.Center,
+    // Appended for source compatibility. Upstream setEnableSpring(false) swaps physical springs for
+    // ordinary CSS transform transitions rather than disabling animation outright.
+    val enableSpring: Boolean = true,
 )
