@@ -23,12 +23,14 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 
 ## Current replication status
 
-The first seventeen AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion and measured line-layout paths instead of relying on generic Compose defaults:
+The first twenty AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry and line-transform paths instead of relying on generic Compose defaults:
 
-- active/inactive main-line scale follows AMLL's `1.0 / 0.97` behavior
+- active/inactive main-line scale follows AMLL's `1.0 / 0.97` behavior using the upstream physical scale spring
 - background lyrics stay grouped with their primary line rather than becoming independent scroll targets
-- background-vocal size/opacity and measured-height slide behavior follow AMLL's grouped presentation model
-- main/background ordering follows the first real word timing and supports AMLL's always-postposition option
+- background-vocal size/opacity, first-word ordering and always-postposition behavior follow AMLL's grouped presentation model
+- background-vocal wrapper motion is driven by the same dynamic vertical spring policy as AMLL's `bgSlideY`, including `+80 / -80 -> 0`, measured-height translation and `0.8 -> 1.0` wrapper scale
+- background-first vocals unfold their occupied measured height with the slide spring; post-positioned vocals keep AMLL's in-flow/out-of-flow visibility semantics
+- background lyric lines have their own independent `1.0 / 0.75` scale spring instead of inheriting the main line's `0.97` scale
 - word highlighting uses a soft leading-edge mask with the Android-like `1em` fade-width default
 - every word keeps AMLL's regular playback-time-derived upward float, including emphasized words
 - long-word emphasis uses AMLL's eligibility, duration mapping, two-half easing, final-word amplification and grapheme stagger
@@ -47,12 +49,13 @@ The first seventeen AMLL-parity passes now cover the main timing, annotation, in
 - automatic focus defaults to AMLL's viewport-relative `Center @ 0.35` alignment instead of a fixed dp offset
 - Top / Center / Bottom focus anchors are supported and use the target item's measured height like upstream layout
 - leading/trailing list space expands from the real composed viewport size so the first and last lyric items can also reach the configured focus anchor
-- lyric-group vertical rhythm now comes from AMLL's measured `0.4em` wrapper padding and `0.3em` main/background gap rather than a fixed global dp gap
+- lyric-group vertical rhythm comes from AMLL's measured `0.4em` wrapper padding and `0.3em` main/background gap rather than a fixed global dp gap
 - secondary lyric defaults follow AMLL's `0.5em` font, `0.75em` total line-height and 0.3 opacity hierarchy
 - songs containing duet lines measure each speaker at 85% content width on the correct side, so wrapping and group height follow AMLL's 15% opposite-speaker inset
-- CI builds the library/demo and runs the native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry and line-layout unit tests
+- lyric typography uses the react-full default weight 600 consistently across main, secondary and background content; active-state changes no longer alter glyph metrics or wrapping
+- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, line-layout, background-motion, line-scale and typography unit tests
 
-The renderer is still evolving. Remaining fidelity work includes pixel-identical CSS-style text-shadow blur/glow, exact background-vocal occupied-height expansion during its slide spring, responsive wrapper-horizontal-padding parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, and additional platform-specific performance tuning.
+The renderer is still evolving. Remaining fidelity work includes exact upstream group-opacity semantics and transition timing, pixel-identical CSS-style text-shadow blur/glow, responsive wrapper-horizontal-padding parity, deeper per-word nowrap/ruby layout parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, and additional platform-specific performance tuning.
 
 ## Non-goals for the first milestone
 
