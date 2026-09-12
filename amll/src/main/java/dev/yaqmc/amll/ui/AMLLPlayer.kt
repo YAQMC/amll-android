@@ -13,7 +13,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -36,6 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -78,15 +80,32 @@ fun AMLLPlayer(
         activeInterlude = activeInterlude,
     )
 
-    val isUserDragging by listState.interactionSource.collectIsDraggedAsState()
     var autoAlignSuspended by remember { mutableStateOf(false) }
+    var touchPointerDown by remember { mutableStateOf(false) }
+    var lastManualInput by remember { mutableStateOf<ManualScrollInputType?>(null) }
+    var manualInteractionEpoch by remember { mutableStateOf(0) }
 
-    LaunchedEffect(isUserDragging, style.autoAlignResumeDelayMs) {
-        if (isUserDragging) {
-            autoAlignSuspended = true
-            return@LaunchedEffect
-        }
+    /**
+     * Upstream starts the five-second auto-align timer only after physical scrolling is idle.
+     * Repeated wheel input and even a new touch while suspended restart this coroutine through the
+     * interaction epoch, matching ScrollInteractionEngine's timer interruption semantics.
+     */
+    LaunchedEffect(
+        autoAlignSuspended,
+        manualInteractionEpoch,
+        style.autoAlignResumeDelayMs,
+    ) {
         if (!autoAlignSuspended) return@LaunchedEffect
+
+        if (touchPointerDown) {
+            snapshotFlow { touchPointerDown }
+                .filter { pressed -> !pressed }
+                .first()
+        }
+
+        if (lastManualInput == ManualScrollInputType.Wheel) {
+            delay(WHEEL_IDLE_TIMEOUT_MS)
+        }
 
         snapshotFlow { listState.isScrollInProgress }
             .filter { scrolling -> !scrolling }
@@ -94,8 +113,9 @@ fun AMLLPlayer(
 
         delay(style.autoAlignResumeDelayMs.coerceAtLeast(0L))
 
-        if (!isUserDragging && !listState.isScrollInProgress) {
+        if (!touchPointerDown && !listState.isScrollInProgress) {
             autoAlignSuspended = false
+            lastManualInput = null
         }
     }
 
@@ -132,7 +152,73 @@ fun AMLLPlayer(
 
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    val touchIntent = TouchScrollIntentTracker()
+                    var hasTouch = false
+
+                    while (true) {
+                        // Initial pass observes without consuming, leaving LazyColumn in charge of drag/fling.
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+
+                        if (
+                            event.type == PointerEventType.Scroll &&
+                            event.changes.any { change ->
+                                change.scrollDelta.x != 0f || change.scrollDelta.y != 0f
+                            }
+                        ) {
+                            lastManualInput = ManualScrollInputType.Wheel
+                            autoAlignSuspended = true
+                            manualInteractionEpoch += 1
+                        }
+
+                        val touchChanges = event.changes.filter { change ->
+                            change.type == PointerType.Touch
+                        }
+                        val pressedTouches = touchChanges.filter { change -> change.pressed }
+                        val justPressed = touchChanges.firstOrNull { change ->
+                            change.pressed && !change.previousPressed
+                        }
+                        val justReleased = touchChanges.any { change ->
+                            !change.pressed && change.previousPressed
+                        }
+
+                        if (!hasTouch && justPressed != null) {
+                            hasTouch = true
+                            touchPointerDown = true
+                            touchIntent.onDown(justPressed.position.x, justPressed.position.y)
+                            // A touch interrupts an existing resume timer even if it becomes only a tap.
+                            manualInteractionEpoch += 1
+                        } else if (hasTouch && justPressed != null && pressedTouches.size > 1) {
+                            val anchor = pressedTouches.first()
+                            touchIntent.reanchor(anchor.position.x, anchor.position.y)
+                        }
+
+                        if (hasTouch && pressedTouches.isNotEmpty()) {
+                            val anchor = pressedTouches.first()
+                            if (touchIntent.onMove(anchor.position.x, anchor.position.y)) {
+                                lastManualInput = ManualScrollInputType.Touch
+                                autoAlignSuspended = true
+                                manualInteractionEpoch += 1
+                            }
+                        }
+
+                        if (hasTouch && justReleased && pressedTouches.isNotEmpty()) {
+                            val anchor = pressedTouches.first()
+                            touchIntent.reanchor(anchor.position.x, anchor.position.y)
+                        }
+
+                        if (hasTouch && pressedTouches.isEmpty()) {
+                            hasTouch = false
+                            touchPointerDown = false
+                            touchIntent.onUpOrCancel()
+                            manualInteractionEpoch += 1
+                        }
+                    }
+                }
+            },
         contentPadding = PaddingValues(
             horizontal = style.horizontalPadding,
             vertical = style.verticalPadding,
