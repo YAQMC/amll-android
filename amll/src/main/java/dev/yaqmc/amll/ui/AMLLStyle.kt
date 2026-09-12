@@ -32,7 +32,8 @@ data class AMLLStyle(
     val lineSpacing: Dp = 18.dp,
     val horizontalPadding: Dp = 28.dp,
     val verticalPadding: Dp = 120.dp,
-    // Keep the focused line above center, close to the Apple Music lyric-page composition.
+    // Legacy bootstrap option retained for source compatibility. v16 uses viewport-relative
+    // alignPosition + alignAnchor for automatic focus, matching upstream AMLL.
     val focusOffset: Dp = 112.dp,
     // AMLL documents 1em as the Android-like word-mask fade width (0.5em for iPad-like rendering).
     val wordFadeWidthEm: Float = 1f,
@@ -44,4 +45,7 @@ data class AMLLStyle(
     val interludeDotSize: Dp = 10.dp,
     val interludeDotGap: Dp = 8.dp,
     val interludeItemHeight: Dp = 56.dp,
+    // Upstream default layoutConfig: Center anchor at 35% of the viewport height.
+    val alignPosition: Float = 0.35f,
+    val alignAnchor: AMLLAlignAnchor = AMLLAlignAnchor.Center,
 )

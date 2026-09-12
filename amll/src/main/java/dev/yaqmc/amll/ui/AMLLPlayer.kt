@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,6 +40,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -62,9 +64,27 @@ fun AMLLPlayer(
     onLineClick: ((LyricLine) -> Unit)? = null,
 ) {
     val listState = rememberLazyListState()
-    val density = LocalDensity.current
     val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
     val isNarrowViewport = configuration.screenWidthDp <= 1024
+    var measuredViewportHeightPx by remember { mutableIntStateOf(0) }
+
+    val minimumVerticalPaddingPx = with(density) { style.verticalPadding.toPx() }
+    val focusEdgePaddingPx = remember(
+        measuredViewportHeightPx,
+        style.alignPosition,
+        minimumVerticalPaddingPx,
+    ) {
+        resolveFocusEdgePaddingPx(
+            viewportHeightPx = measuredViewportHeightPx,
+            alignPosition = style.alignPosition,
+            minimumPaddingPx = minimumVerticalPaddingPx,
+        )
+    }
+    val beforePaddingPx = focusEdgePaddingPx.before.roundToInt()
+    val afterPaddingPx = focusEdgePaddingPx.after.roundToInt()
+    val beforePadding = with(density) { beforePaddingPx.toDp() }
+    val afterPadding = with(density) { afterPaddingPx.toDp() }
 
     val groups = remember(state.lyricLines) { groupLyricLines(state.lyricLines) }
     val interludes = remember(groups) { calculateInterludes(groups) }
@@ -148,32 +168,72 @@ fun AMLLPlayer(
     LaunchedEffect(
         focusItemIndex,
         listItems.size,
-        style.focusOffset,
+        style.alignPosition,
+        style.alignAnchor,
         autoAlignSuspended,
         focusIntervalMs,
         activeInterlude,
         seekEpoch,
+        measuredViewportHeightPx,
+        beforePaddingPx,
+        afterPaddingPx,
     ) {
         if (autoAlignSuspended) return@LaunchedEffect
         if (focusItemIndex !in listItems.indices) return@LaunchedEffect
+        if (measuredViewportHeightPx <= 0) return@LaunchedEffect
 
         val focusSpring = focusSpringSpec(
             isSeeking = lastSeekPositionMs == state.positionMs,
             isInterludeActive = activeInterlude != null,
             intervalMs = focusIntervalMs,
         )
-        val focusOffsetPx = with(density) { style.focusOffset.roundToPx() }
-        val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusItemIndex }
+
+        // Wait until the size-derived edge padding has reached LazyListLayoutInfo so viewport/item
+        // coordinates are from the same layout pass after a resize or alignPosition change.
+        if (listState.layoutInfo.beforeContentPadding != beforePaddingPx) {
+            snapshotFlow { listState.layoutInfo.beforeContentPadding }
+                .filter { appliedPadding -> appliedPadding == beforePaddingPx }
+                .first()
+        }
+
+        if (
+            listState.layoutInfo.viewportEndOffset -
+            listState.layoutInfo.viewportStartOffset <= 0
+        ) {
+            snapshotFlow {
+                listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
+            }.filter { viewportHeight -> viewportHeight > 0 }.first()
+        }
+
+        var layoutInfo = listState.layoutInfo
+        var viewportHeightPx =
+            (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset).coerceAtLeast(1)
+        var visible = layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusItemIndex }
+
         if (visible == null) {
-            // Compose does not expose a custom AnimationSpec for animateScrollToItem. Far jumps keep
-            // its native animation; line-to-line visible focus motion uses the exact mapped AMLL spring.
+            // For an offscreen target we do not know its measured height yet. First place its top on
+            // the configured viewport-relative position; after it is composed, correct for the real
+            // Top/Center/Bottom anchor below with the same AMLL spring used for normal focus motion.
+            val coarseOffsetFromStart = viewportHeightPx * style.alignPosition
             listState.animateScrollToItem(
                 index = focusItemIndex,
-                scrollOffset = -focusOffsetPx,
+                scrollOffset = -coarseOffsetFromStart.roundToInt(),
             )
-        } else {
-            val targetOffset = listState.layoutInfo.viewportStartOffset + focusOffsetPx
-            val delta = (visible.offset - targetOffset).toFloat()
+            layoutInfo = listState.layoutInfo
+            viewportHeightPx =
+                (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset).coerceAtLeast(1)
+            visible = layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusItemIndex }
+        }
+
+        visible?.let { target ->
+            val targetTop = resolveFocusItemTopPx(
+                viewportStartPx = layoutInfo.viewportStartOffset,
+                viewportHeightPx = viewportHeightPx,
+                targetHeightPx = target.size,
+                alignPosition = style.alignPosition,
+                alignAnchor = style.alignAnchor,
+            )
+            val delta = target.offset - targetTop
             if (abs(delta) > 0.5f) {
                 listState.animateScrollBy(
                     value = delta,
@@ -190,6 +250,7 @@ fun AMLLPlayer(
         state = listState,
         modifier = modifier
             .fillMaxSize()
+            .onSizeChanged { size -> measuredViewportHeightPx = size.height }
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     val touchIntent = TouchScrollIntentTracker()
@@ -258,8 +319,10 @@ fun AMLLPlayer(
                 }
             },
         contentPadding = PaddingValues(
-            horizontal = style.horizontalPadding,
-            vertical = style.verticalPadding,
+            start = style.horizontalPadding,
+            top = beforePadding,
+            end = style.horizontalPadding,
+            bottom = afterPadding,
         ),
         verticalArrangement = Arrangement.spacedBy(style.lineSpacing),
     ) {
