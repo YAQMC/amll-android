@@ -61,8 +61,6 @@ fun AMLLPlayer(
     val listState = rememberLazyListState()
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
-    // Upstream uses a 1024 CSS-pixel cutoff. screenWidthDp is the closest Android logical-pixel
-    // equivalent and keeps phone/tablet behavior stable across display densities.
     val isNarrowViewport = configuration.screenWidthDp <= 1024
 
     val groups = remember(state.lyricLines) { groupLyricLines(state.lyricLines) }
@@ -169,7 +167,11 @@ fun AMLLPlayer(
                         else -> 0
                     }
                     val distance = abs(groupIndex - referenceGroupIndex)
-                    val targetScale = if (active) style.activeScale else style.inactiveScale
+                    val targetScale = if (active || !state.isPlaying) {
+                        style.activeScale
+                    } else {
+                        style.inactiveScale
+                    }
                     val targetAlpha = if (active) {
                         style.activeAlpha
                     } else {
@@ -212,6 +214,7 @@ fun AMLLPlayer(
                     LyricGroup(
                         group = group,
                         active = active,
+                        isPlaying = state.isPlaying,
                         positionMs = state.positionMs,
                         style = style,
                         scale = scale,
@@ -229,6 +232,7 @@ fun AMLLPlayer(
 private fun LyricGroup(
     group: LyricLineGroup,
     active: Boolean,
+    isPlaying: Boolean,
     positionMs: Long,
     style: AMLLStyle,
     scale: Float,
@@ -258,10 +262,7 @@ private fun LyricGroup(
                 }
 
                 renderEffect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurRadiusPx > 0.01f) {
-                    BlurEffect(
-                        radiusX = blurRadiusPx,
-                        radiusY = blurRadiusPx,
-                    )
+                    BlurEffect(radiusX = blurRadiusPx, radiusY = blurRadiusPx)
                 } else {
                     null
                 }
@@ -279,6 +280,7 @@ private fun LyricGroup(
                 line = background,
                 mainIsDuet = main.isDuet,
                 active = active,
+                isPlaying = isPlaying,
                 placedFirst = true,
                 positionMs = positionMs,
                 style = style,
@@ -324,6 +326,7 @@ private fun LyricGroup(
                 line = background,
                 mainIsDuet = main.isDuet,
                 active = active,
+                isPlaying = isPlaying,
                 placedFirst = false,
                 positionMs = positionMs,
                 style = style,
@@ -337,6 +340,7 @@ private fun BackgroundVocal(
     line: LyricLine,
     mainIsDuet: Boolean,
     active: Boolean,
+    isPlaying: Boolean,
     placedFirst: Boolean,
     positionMs: Long,
     style: AMLLStyle,
@@ -344,9 +348,10 @@ private fun BackgroundVocal(
     val alignment = if (mainIsDuet) Alignment.End else Alignment.Start
     val textAlign = if (mainIsDuet) TextAlign.End else TextAlign.Start
     val hiddenDirection = if (placedFirst) 1f else -1f
+    val visible = active || !isPlaying
 
     AnimatedVisibility(
-        visible = active,
+        visible = visible,
         enter = fadeIn(animationSpec = tween(220)) +
             slideInVertically(
                 animationSpec = spring(dampingRatio = 0.82f, stiffness = 180f),
@@ -384,7 +389,7 @@ private fun BackgroundVocal(
                     fontWeight = FontWeight.SemiBold,
                     textAlign = textAlign,
                 ),
-                active = true,
+                active = active,
                 activeColor = style.activeColor,
                 inactiveColor = style.inactiveColor,
                 minimumHeight = 28.dp,
