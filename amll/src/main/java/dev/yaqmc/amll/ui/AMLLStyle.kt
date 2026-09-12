@@ -15,11 +15,22 @@ data class AMLLStyle(
     val secondaryInactiveColor: Color = Color.White.copy(alpha = 0.28f),
     val lineFontSize: TextUnit = 34.sp,
     val secondaryFontSize: TextUnit = 16.sp,
-    val activeScale: Float = 1.055f,
-    val inactiveScale: Float = 0.94f,
+    // Upstream AMLL keeps the active main line at 100% and scales inactive main lines to 97%.
+    val activeScale: Float = 1f,
+    val inactiveScale: Float = 0.97f,
     val activeAlpha: Float = 1f,
     val inactiveAlpha: Float = 0.52f,
+    val farInactiveAlpha: Float = 0.24f,
+    // Upstream background vocals are rendered at ~0.7em and stay intentionally subdued.
+    val backgroundLineScale: Float = 0.70f,
+    val backgroundAlpha: Float = 0.40f,
+    // Upstream's background-line spring starts around -80 CSS px. dp is the closest native unit.
+    val backgroundSlide: Dp = 80.dp,
     val lineSpacing: Dp = 18.dp,
     val horizontalPadding: Dp = 28.dp,
-    val verticalPadding: Dp = 96.dp,
+    val verticalPadding: Dp = 120.dp,
+    // Keep the focused line above center, close to the Apple Music lyric-page composition.
+    val focusOffset: Dp = 112.dp,
+    // AMLL documents 1em as the Android-like word-mask fade width (0.5em for iPad-like rendering).
+    val wordFadeWidthEm: Float = 1f,
 )
