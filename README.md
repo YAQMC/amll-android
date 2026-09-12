@@ -14,12 +14,13 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 - AMLL-like spring focus, line scale and opacity transitions
 - Android-like soft word-mask leading edge
 - Media-time-derived word float and long-word emphasis motion
+- Per-grapheme AMLL emphasis stagger, push, lift and glow
 - Android 8.0+ (`minSdk 26`), matching YAQMC's Android floor
 - API shaped so YAQMC can adapt its existing parsed lyric data directly
 
 ## Current replication status
 
-The first two AMLL-parity passes mirror several upstream behaviors instead of using generic Compose defaults:
+The first three AMLL-parity passes mirror several upstream behaviors instead of using generic Compose defaults:
 
 - active main line scale: `1.0`
 - inactive main line scale: `0.97`
@@ -29,12 +30,14 @@ The first two AMLL-parity passes mirror several upstream behaviors instead of us
 - background vocals spring in from an approximately `-80dp` vertical offset
 - focus scrolling uses a spring when the target item is already visible
 - word highlighting uses a soft three-band leading edge; the default fade width is tuned for the Android-like `1em` AMLL setting
-- regular words float upward by approximately `0.05em`; background-vocal words use twice the vertical distance
+- every word keeps AMLL's regular ease-out upward drift of approximately `0.05em`; background-vocal words use twice the vertical distance
 - long-word emphasis follows AMLL's duration/length eligibility rule and its two-half cubic-bezier pulse
-- word transforms are derived directly from playback time, so seeking reconstructs the same visual state deterministically
+- emphasized text is split into grapheme clusters and each cluster receives AMLL's staggered delay, horizontal push, vertical lift and scale pulse
+- character glow strength/radius follows AMLL's duration-derived formula; Android 8-30 use a small native multi-sample halo instead of API-31-only `RenderEffect`
+- word and character transforms are derived directly from playback time, so seeking reconstructs the same visual state deterministically
 - CI builds the library/demo and runs native word-motion/grouping unit tests
 
-This is still an early renderer. Exact per-character glow/blur and horizontal character push, interlude dots, manual-scroll auto-align suspension, ruby/per-word romanization, and exact line-layout parity remain future work.
+This is still an early renderer. Pixel-identical text-shadow blur, interlude dots, manual-scroll auto-align suspension, ruby/per-word romanization, distance blur, and exact line-layout parity remain future work.
 
 ## Non-goals for the first milestone
 

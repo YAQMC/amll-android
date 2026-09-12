@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.yaqmc.amll.model.LyricLine
 import dev.yaqmc.amll.model.LyricWord
+import java.text.BreakIterator
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -77,32 +79,59 @@ internal fun KaraokeText(
                 )
                 textOffset += word.text.length
 
-                val bounds = geometry.bounds ?: return@forEachIndexed
-                val motion = if (active) {
+                val wordMotion = if (active) {
                     wordMotionAt(
                         word = word,
                         positionMs = positionMs,
                         isBackground = line.isBackground,
-                        isLastWord = wordIndex == line.words.lastIndex,
                     )
                 } else {
                     WordMotion()
                 }
 
-                drawWord(
-                    layout = layout,
-                    geometry = geometry,
-                    motion = motion,
-                    fontSizePx = fontSizePx,
-                    active = active,
-                    activeColor = activeColor,
-                    inactiveColor = inactiveColor,
-                    pivot = bounds.center,
-                )
+                if (active && shouldEmphasize(word) && geometry.characters.isNotEmpty()) {
+                    geometry.characters.forEachIndexed { characterIndex, character ->
+                        val characterMotion = characterMotionAt(
+                            word = word,
+                            positionMs = positionMs,
+                            characterIndex = characterIndex,
+                            totalCharacters = geometry.characters.size,
+                            isBackground = line.isBackground,
+                            isLastWord = wordIndex == line.words.lastIndex,
+                        )
+                        drawCharacter(
+                            layout = layout,
+                            geometry = character,
+                            wordMotion = wordMotion,
+                            characterMotion = characterMotion,
+                            fontSizePx = fontSizePx,
+                            activeColor = activeColor,
+                            inactiveColor = inactiveColor,
+                        )
+                    }
+                } else {
+                    drawWord(
+                        layout = layout,
+                        geometry = geometry,
+                        motion = wordMotion,
+                        fontSizePx = fontSizePx,
+                        active = active,
+                        activeColor = activeColor,
+                        inactiveColor = inactiveColor,
+                    )
+                }
             }
         }
     }
 }
+
+private data class CharacterGeometry(
+    val full: Path,
+    val solid: Path,
+    val midFade: Path,
+    val edgeFade: Path,
+    val bounds: Rect,
+)
 
 private data class WordGeometry(
     val full: Path,
@@ -110,6 +139,12 @@ private data class WordGeometry(
     val midFade: Path,
     val edgeFade: Path,
     val bounds: Rect?,
+    val characters: List<CharacterGeometry>,
+)
+
+private data class LocalTextRange(
+    val start: Int,
+    val endExclusive: Int,
 )
 
 private fun DrawScope.drawWord(
@@ -120,55 +155,101 @@ private fun DrawScope.drawWord(
     active: Boolean,
     activeColor: Color,
     inactiveColor: Color,
-    pivot: Offset,
 ) {
+    if (geometry.bounds == null) return
     val yOffset = motion.translateYEm * fontSizePx
 
-    // A small overdraw layer gives emphasized words a brighter pulse without relying on
-    // RenderEffect, so the behavior remains available on YAQMC's Android 8 minimum.
-    if (active && motion.emphasis > 0.001f) {
-        withTransform({
-            translate(top = yOffset)
-            scale(
-                scaleX = motion.scale + 0.018f * motion.emphasis,
-                scaleY = motion.scale + 0.018f * motion.emphasis,
-                pivot = pivot,
-            )
-        }) {
-            clipPath(geometry.full) {
-                drawText(
-                    layout,
-                    color = activeColor.copy(alpha = activeColor.alpha * 0.16f * motion.emphasis),
-                )
-            }
-        }
-    }
-
-    withTransform({
-        translate(top = yOffset)
-        scale(scaleX = motion.scale, scaleY = motion.scale, pivot = pivot)
-    }) {
+    withTransform({ translate(top = yOffset) }) {
         clipPath(geometry.full) {
             drawText(layout, color = inactiveColor)
         }
 
         if (!active) return@withTransform
+        drawHighlight(layout, geometry.solid, geometry.midFade, geometry.edgeFade, activeColor)
+    }
+}
 
-        clipPath(geometry.solid) {
-            drawText(layout, color = activeColor)
+private fun DrawScope.drawCharacter(
+    layout: TextLayoutResult,
+    geometry: CharacterGeometry,
+    wordMotion: WordMotion,
+    characterMotion: CharacterMotion,
+    fontSizePx: Float,
+    activeColor: Color,
+    inactiveColor: Color,
+) {
+    val xOffset = characterMotion.translateXEm * fontSizePx
+    val yOffset = (wordMotion.translateYEm + characterMotion.translateYEm) * fontSizePx
+    val pivot = geometry.bounds.center
+
+    // Text-shadow is not available as a first-class Compose TextLayout draw effect on Android 8.
+    // A compact five-sample halo keeps the same AMLL glow timing/radius while avoiding API-31-only
+    // RenderEffect. Only emphasized graphemes pay this overdraw cost.
+    if (characterMotion.glowAlpha > 0.001f && characterMotion.glowRadiusEm > 0f) {
+        val radiusPx = characterMotion.glowRadiusEm * fontSizePx * 0.22f
+        val haloAlpha = activeColor.alpha * characterMotion.glowAlpha
+        val haloScale = characterMotion.scale + characterMotion.glowRadiusEm * 0.025f
+        val offsets = arrayOf(
+            Offset.Zero,
+            Offset(radiusPx, 0f),
+            Offset(-radiusPx, 0f),
+            Offset(0f, radiusPx),
+            Offset(0f, -radiusPx),
+        )
+
+        offsets.forEachIndexed { index, offset ->
+            withTransform({
+                translate(left = xOffset + offset.x, top = yOffset + offset.y)
+                scale(scaleX = haloScale, scaleY = haloScale, pivot = pivot)
+            }) {
+                clipPath(geometry.full) {
+                    drawText(
+                        layout,
+                        color = activeColor.copy(
+                            alpha = haloAlpha * if (index == 0) 0.18f else 0.10f,
+                        ),
+                    )
+                }
+            }
         }
-        clipPath(geometry.midFade) {
-            drawText(layout, color = activeColor.copy(alpha = activeColor.alpha * 0.62f))
+    }
+
+    withTransform({
+        translate(left = xOffset, top = yOffset)
+        scale(
+            scaleX = characterMotion.scale,
+            scaleY = characterMotion.scale,
+            pivot = pivot,
+        )
+    }) {
+        clipPath(geometry.full) {
+            drawText(layout, color = inactiveColor)
         }
-        clipPath(geometry.edgeFade) {
-            drawText(layout, color = activeColor.copy(alpha = activeColor.alpha * 0.28f))
-        }
+        drawHighlight(layout, geometry.solid, geometry.midFade, geometry.edgeFade, activeColor)
+    }
+}
+
+private fun DrawScope.drawHighlight(
+    layout: TextLayoutResult,
+    solid: Path,
+    midFade: Path,
+    edgeFade: Path,
+    activeColor: Color,
+) {
+    clipPath(solid) {
+        drawText(layout, color = activeColor)
+    }
+    clipPath(midFade) {
+        drawText(layout, color = activeColor.copy(alpha = activeColor.alpha * 0.62f))
+    }
+    clipPath(edgeFade) {
+        drawText(layout, color = activeColor.copy(alpha = activeColor.alpha * 0.28f))
     }
 }
 
 /**
- * Builds the full word clip plus a three-band approximation of AMLL's soft karaoke mask.
- * Geometry is kept per word so native word motion can be applied without relaying out text.
+ * Builds the word clip, karaoke bands and per-grapheme clips from one shared TextLayoutResult.
+ * Emphasized graphemes can then move independently without changing Compose text layout.
  */
 private fun buildWordGeometry(
     layout: TextLayoutResult,
@@ -177,6 +258,60 @@ private fun buildWordGeometry(
     positionMs: Long,
     fadeWidthPx: Float,
 ): WordGeometry {
+    val wordGeometry = buildGeometryRange(
+        layout = layout,
+        word = word,
+        wordOffset = wordOffset,
+        range = LocalTextRange(0, word.text.length),
+        positionMs = positionMs,
+        fadeWidthPx = fadeWidthPx,
+    )
+
+    val characters = graphemeRanges(word.text).mapNotNull { range ->
+        val geometry = buildGeometryRange(
+            layout = layout,
+            word = word,
+            wordOffset = wordOffset,
+            range = range,
+            positionMs = positionMs,
+            fadeWidthPx = fadeWidthPx,
+        )
+        val bounds = geometry.bounds ?: return@mapNotNull null
+        CharacterGeometry(
+            full = geometry.full,
+            solid = geometry.solid,
+            midFade = geometry.midFade,
+            edgeFade = geometry.edgeFade,
+            bounds = bounds,
+        )
+    }
+
+    return WordGeometry(
+        full = wordGeometry.full,
+        solid = wordGeometry.solid,
+        midFade = wordGeometry.midFade,
+        edgeFade = wordGeometry.edgeFade,
+        bounds = wordGeometry.bounds,
+        characters = characters,
+    )
+}
+
+private data class RangeGeometry(
+    val full: Path,
+    val solid: Path,
+    val midFade: Path,
+    val edgeFade: Path,
+    val bounds: Rect?,
+)
+
+private fun buildGeometryRange(
+    layout: TextLayoutResult,
+    word: LyricWord,
+    wordOffset: Int,
+    range: LocalTextRange,
+    positionMs: Long,
+    fadeWidthPx: Float,
+): RangeGeometry {
     val full = Path()
     val solid = Path()
     val midFade = Path()
@@ -189,11 +324,11 @@ private fun buildWordGeometry(
     var maxRight = Float.NEGATIVE_INFINITY
     var maxBottom = Float.NEGATIVE_INFINITY
 
-    if (wordText.isEmpty()) {
-        return WordGeometry(full, solid, midFade, edgeFade, null)
+    if (wordText.isEmpty() || range.start >= range.endExclusive) {
+        return RangeGeometry(full, solid, midFade, edgeFade, null)
     }
 
-    for (localIndex in wordText.indices) {
+    for (localIndex in range.start until range.endExclusive) {
         val globalIndex = wordOffset + localIndex
         if (globalIndex >= layout.layoutInput.text.length) break
 
@@ -236,5 +371,37 @@ private fun buildWordGeometry(
     } else {
         null
     }
-    return WordGeometry(full, solid, midFade, edgeFade, bounds)
+    return RangeGeometry(full, solid, midFade, edgeFade, bounds)
+}
+
+/**
+ * Mirrors upstream's `Intl.Segmenter(..., grapheme)` split closely enough on Android/JVM while
+ * preserving UTF-16 offsets required by TextLayoutResult. Leading/trailing whitespace is excluded
+ * because AMLL applies emphasis to `displayWord.trim()`.
+ */
+private fun graphemeRanges(text: String): List<LocalTextRange> {
+    if (text.isEmpty()) return emptyList()
+
+    var trimStart = 0
+    while (trimStart < text.length && text[trimStart].isWhitespace()) trimStart++
+    var trimEnd = text.length
+    while (trimEnd > trimStart && text[trimEnd - 1].isWhitespace()) trimEnd--
+    if (trimStart >= trimEnd) return emptyList()
+
+    val iterator = BreakIterator.getCharacterInstance(Locale.ROOT)
+    iterator.setText(text)
+    val ranges = mutableListOf<LocalTextRange>()
+
+    var start = iterator.first()
+    var end = iterator.next()
+    while (end != BreakIterator.DONE) {
+        val clippedStart = max(start, trimStart)
+        val clippedEnd = min(end, trimEnd)
+        if (clippedStart < clippedEnd) {
+            ranges += LocalTextRange(clippedStart, clippedEnd)
+        }
+        start = end
+        end = iterator.next()
+    }
+    return ranges
 }
