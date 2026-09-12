@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.sp
 data class AMLLStyle(
     val activeColor: Color = Color.White,
     val inactiveColor: Color = Color.White.copy(alpha = 0.38f),
-    // Upstream .lyricSubLine stays at 0.3 opacity; inactive group opacity is applied separately.
+    // Upstream .lyricSubLine stays at 0.3 opacity; group opacity is applied separately.
     val secondaryActiveColor: Color = Color.White.copy(alpha = 0.30f),
     val secondaryInactiveColor: Color = Color.White.copy(alpha = 0.30f),
     val lineFontSize: TextUnit = 34.sp,
@@ -24,9 +24,12 @@ data class AMLLStyle(
     // Upstream AMLL keeps the active main line at 100% and scales inactive main lines to 97%.
     val activeScale: Float = 1f,
     val inactiveScale: Float = 0.97f,
-    val activeAlpha: Float = 1f,
-    val inactiveAlpha: Float = 0.52f,
-    val farInactiveAlpha: Float = 0.24f,
+    // Dynamic AMLL group-opacity targets: highlighted groups are 0.85, ordinary rows stay at 1.0.
+    val activeAlpha: Float = AMLL_HIGHLIGHTED_GROUP_ALPHA,
+    val inactiveAlpha: Float = AMLL_DYNAMIC_GROUP_ALPHA,
+    // Legacy bootstrap field kept for source compatibility. Upstream does not distance-fade dynamic
+    // lyric opacity; v21 therefore no longer uses a separate far-row target.
+    val farInactiveAlpha: Float = AMLL_DYNAMIC_GROUP_ALPHA,
     // Upstream background vocals render at ~0.7em. Their lyric-line transform additionally
     // scales inactive playing rows to 75%, independently from the wrapper's 0.8 slide scale.
     val backgroundLineScale: Float = 0.70f,
