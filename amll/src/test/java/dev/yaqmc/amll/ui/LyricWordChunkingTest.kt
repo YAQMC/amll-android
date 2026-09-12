@@ -3,6 +3,7 @@ package dev.yaqmc.amll.ui
 import dev.yaqmc.amll.model.LyricRuby
 import dev.yaqmc.amll.model.LyricWord
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -91,5 +92,31 @@ class LyricWordChunkingTest {
         assertTrue(plan.words.first().ruby.isEmpty())
         assertEquals(500L, plan.words.last().startTimeMs)
         assertEquals(500L, plan.words.last().endTimeMs)
+    }
+
+    @Test fun mergedLatinChunkCanEmphasizeEvenWhenChildrenAreTooShort() {
+        val plan = chunkAndSplitLyricWords(
+            listOf(
+                word("su", 0, 500),
+                word("gar", 500, 1000),
+            )
+        )
+        val chunk = plan.chunks.single()
+
+        assertFalse(shouldEmphasize(chunk.words[0]))
+        assertFalse(shouldEmphasize(chunk.words[1]))
+        assertEquals("sugar", chunk.emphasisWord.text)
+        assertEquals(0L, chunk.emphasisWord.startTimeMs)
+        assertEquals(1000L, chunk.emphasisWord.endTimeMs)
+        assertTrue(chunk.emphasized)
+    }
+
+    @Test fun trailingWhitespaceDoesNotBecomeLastEmphasizedChunk() {
+        val plan = chunkAndSplitLyricWords(
+            listOf(word("hello ", 0, 1000))
+        )
+
+        assertEquals(0, plan.lastContentChunkIndex)
+        assertTrue(plan.chunks.last().isSpace)
     }
 }
