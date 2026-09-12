@@ -1,6 +1,7 @@
 package dev.yaqmc.amll.state
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class AMLLPlayerStatePlaybackTest {
@@ -23,6 +24,16 @@ class AMLLPlayerStatePlaybackTest {
         state.update(-100L)
 
         assertEquals(0L, state.positionMs)
+        assertEquals(1L, state.positionUpdateVersion)
+    }
+
+    @Test fun combinedUpdateSynchronizesPositionAndPlayState() {
+        val state = AMLLPlayerState(initialPositionMs = 500L, initialIsPlaying = true)
+
+        state.update(positionMs = 1_250L, isPlaying = false)
+
+        assertEquals(1_250L, state.positionMs)
+        assertFalse(state.isPlaying)
         assertEquals(1L, state.positionUpdateVersion)
     }
 }

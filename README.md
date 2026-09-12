@@ -23,7 +23,7 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 
 ## Current replication status
 
-The first twenty AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry and line-transform paths instead of relying on generic Compose defaults:
+The first twenty-two AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity and mask-alpha paths instead of relying on generic Compose defaults:
 
 - active/inactive main-line scale follows AMLL's `1.0 / 0.97` behavior using the upstream physical scale spring
 - background lyrics stay grouped with their primary line rather than becoming independent scroll targets
@@ -32,6 +32,8 @@ The first twenty AMLL-parity passes now cover the main timing, annotation, inter
 - background-first vocals unfold their occupied measured height with the slide spring; post-positioned vocals keep AMLL's in-flow/out-of-flow visibility semantics
 - background lyric lines have their own independent `1.0 / 0.75` scale spring instead of inheriting the main line's `0.97` scale
 - word highlighting uses a soft leading-edge mask with the Android-like `1em` fade-width default
+- AMLL SOLID/GRADIENT mask endpoints now use the upstream alpha targets (`0.2`, `1.0`, `0.4`) and mode-specific `450ms / 300ms ease-out` transitions
+- dynamic group opacity follows upstream targets: highlighted groups use `0.85`, ordinary dynamic rows stay at `1.0`, with the DOM-style `0.4s ease` transition instead of distance fading
 - every word keeps AMLL's regular playback-time-derived upward float, including emphasized words
 - long-word emphasis uses AMLL's eligibility, duration mapping, two-half easing, final-word amplification and grapheme stagger
 - emphasized graphemes reproduce AMLL's horizontal push, vertical lift, scale and duration-derived glow envelope
@@ -53,9 +55,9 @@ The first twenty AMLL-parity passes now cover the main timing, annotation, inter
 - secondary lyric defaults follow AMLL's `0.5em` font, `0.75em` total line-height and 0.3 opacity hierarchy
 - songs containing duet lines measure each speaker at 85% content width on the correct side, so wrapping and group height follow AMLL's 15% opposite-speaker inset
 - lyric typography uses the react-full default weight 600 consistently across main, secondary and background content; active-state changes no longer alter glyph metrics or wrapping
-- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, line-layout, background-motion, line-scale and typography unit tests
+- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, line-layout, background-motion, line-scale, opacity, mask and typography unit tests
 
-The renderer is still evolving. Remaining fidelity work includes exact upstream group-opacity semantics and transition timing, pixel-identical CSS-style text-shadow blur/glow, responsive wrapper-horizontal-padding parity, deeper per-word nowrap/ruby layout parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, and additional platform-specific performance tuning.
+The renderer is still evolving. Remaining fidelity work includes replacing the current segmented soft word-mask edge with upstream's continuous bright-to-dark gradient, pixel-identical CSS-style text-shadow blur/glow, responsive wrapper-horizontal-padding parity, deeper per-word nowrap/ruby layout parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, and additional platform-specific performance tuning.
 
 ## Non-goals for the first milestone
 
@@ -65,6 +67,8 @@ The renderer is still evolving. Remaining fidelity work includes exact upstream 
 
 ## Usage
 
+完整中文接入文档见 [`docs/USAGE.zh-CN.md`](docs/USAGE.zh-CN.md)，包括 Gradle 引入、YAQMC DTO adapter、播放状态同步、背景人声/对唱、样式配置和完整 Compose 示例。
+
 ```kotlin
 val state = remember { AMLLPlayerState() }
 
@@ -72,14 +76,20 @@ LaunchedEffect(songId) {
     state.setLyricLines(lines)
 }
 
-LaunchedEffect(playbackPositionMs) {
-    state.update(playbackPositionMs)
+LaunchedEffect(playbackPositionMs, isPlaying) {
+    state.update(
+        positionMs = playbackPositionMs,
+        isPlaying = isPlaying,
+    )
 }
 
 AMLLPlayer(
     state = state,
     modifier = Modifier.fillMaxSize(),
-    onLineClick = { line -> player.seekTo(line.startTimeMs) },
+    onLineClick = { line ->
+        player.seekTo(line.startTimeMs)
+        state.seekTo(line.startTimeMs)
+    },
 )
 ```
 

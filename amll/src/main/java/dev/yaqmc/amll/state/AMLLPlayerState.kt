@@ -49,6 +49,16 @@ class AMLLPlayerState(
         positionUpdateVersion++
     }
 
+    /**
+     * Preferred host-integration entry point when a playback clock delivers position and play state
+     * together. The position sample is still observed even when it is equal to the previous value,
+     * preserving AMLL seek/stall inference semantics.
+     */
+    fun update(positionMs: Long, isPlaying: Boolean) {
+        this.isPlaying = isPlaying
+        seekTo(positionMs)
+    }
+
     fun update(positionMs: Long) = seekTo(positionMs)
 }
 
