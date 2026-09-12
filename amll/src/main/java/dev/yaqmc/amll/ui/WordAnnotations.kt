@@ -22,6 +22,7 @@ internal data class AnnotationRange(
 
 internal data class WordAnnotationLayout(
     val roman: TextLayoutResult? = null,
+    val romanHasVisibleText: Boolean = false,
     val ruby: TextLayoutResult? = null,
     val rubyRanges: List<AnnotationRange> = emptyList(),
 )
@@ -36,8 +37,14 @@ internal fun measureWordAnnotations(
 
     return words.map { word ->
         val romanText = word.romanText?.trim().orEmpty()
-        val romanLayout = if (hasRomanLine && romanText.isNotEmpty()) {
-            measurer.measure(text = romanText, style = annotationStyle)
+        // Upstream creates romanWord for every dynamic word once any word has romanization and
+        // fills missing entries with NBSP. Measuring that blank box matters for narrow punctuation
+        // and keeps the row's roman band height stable.
+        val romanLayout = if (hasRomanLine) {
+            measurer.measure(
+                text = if (romanText.isNotEmpty()) romanText else "\u00A0",
+                style = annotationStyle,
+            )
         } else {
             null
         }
@@ -61,6 +68,7 @@ internal fun measureWordAnnotations(
 
         WordAnnotationLayout(
             roman = romanLayout,
+            romanHasVisibleText = romanText.isNotEmpty(),
             ruby = rubyLayout,
             rubyRanges = ranges,
         )
@@ -71,7 +79,8 @@ internal fun DrawScope.drawWordAnnotations(
     word: LyricWord,
     layout: WordAnnotationLayout,
     baseBounds: Rect,
-    baseOffsetY: Float,
+    baseTranslateX: Float,
+    baseTranslateY: Float,
     wordTranslateY: Float,
     annotationGapPx: Float,
     positionMs: Long,
@@ -80,8 +89,8 @@ internal fun DrawScope.drawWordAnnotations(
     inactiveColor: Color,
 ) {
     layout.ruby?.let { ruby ->
-        val left = baseBounds.center.x - ruby.size.width / 2f
-        val top = baseOffsetY + baseBounds.top - annotationGapPx - ruby.size.height
+        val left = baseBounds.center.x + baseTranslateX - ruby.size.width / 2f
+        val top = baseBounds.top + baseTranslateY - annotationGapPx - ruby.size.height
         drawRubyAnnotation(
             layout = ruby,
             ranges = layout.rubyRanges,
@@ -95,8 +104,10 @@ internal fun DrawScope.drawWordAnnotations(
     }
 
     layout.roman?.let { roman ->
-        val left = baseBounds.center.x - roman.size.width / 2f
-        val top = baseOffsetY + baseBounds.bottom + annotationGapPx
+        // NBSP-only layouts reserve upstream's wordBody footprint/height but do not need a draw.
+        if (!layout.romanHasVisibleText) return@let
+        val left = baseBounds.center.x + baseTranslateX - roman.size.width / 2f
+        val top = baseBounds.bottom + baseTranslateY + annotationGapPx
         drawProgressAnnotation(
             layout = roman,
             left = left,
