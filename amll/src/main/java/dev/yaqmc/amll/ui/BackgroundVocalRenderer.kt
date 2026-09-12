@@ -14,7 +14,6 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.yaqmc.amll.model.LyricLine
@@ -96,7 +95,7 @@ internal fun AMLLBackgroundVocal(
                     positionMs = positionMs,
                     style = TextStyle(
                         fontSize = style.lineFontSize * style.backgroundLineScale,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = style.lyricFontWeight,
                         textAlign = textAlign,
                     ),
                     active = active,

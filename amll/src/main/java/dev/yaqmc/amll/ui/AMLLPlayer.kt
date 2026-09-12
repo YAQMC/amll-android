@@ -36,7 +36,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import dev.yaqmc.amll.model.LyricLine
 import dev.yaqmc.amll.state.AMLLPlayerState
@@ -477,7 +476,7 @@ private fun LyricGroup(
                 positionMs = positionMs,
                 style = TextStyle(
                     fontSize = style.lineFontSize,
-                    fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
+                    fontWeight = style.lyricFontWeight,
                     textAlign = mainTextAlign,
                 ),
                 active = active,
@@ -491,6 +490,7 @@ private fun LyricGroup(
                     text = main.translatedLyric,
                     color = if (active) style.secondaryActiveColor else style.secondaryInactiveColor,
                     fontSize = style.secondaryFontSize,
+                    fontWeight = style.lyricFontWeight,
                     lineHeight = subLineHeight,
                     textAlign = mainTextAlign,
                 )
@@ -501,6 +501,7 @@ private fun LyricGroup(
                     text = main.romanLyric,
                     color = if (active) style.secondaryActiveColor else style.secondaryInactiveColor,
                     fontSize = style.secondaryFontSize,
+                    fontWeight = style.lyricFontWeight,
                     lineHeight = subLineHeight,
                     textAlign = mainTextAlign,
                 )
