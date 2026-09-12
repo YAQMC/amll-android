@@ -29,8 +29,9 @@ internal data class RenderWordChunk(
      * Upstream emphasizes a chunk when any child qualifies, or when the merged non-CJK chunk
      * qualifies. This is what lets short syllable fragments combine into one long-word pulse.
      */
-    val shouldEmphasize: Boolean =
-        words.any(::shouldEmphasize) || (!isCjkText(text) && shouldEmphasize(emphasisWord))
+    val emphasized: Boolean =
+        words.any { word -> shouldEmphasize(word) } ||
+            (!isCjkText(text) && shouldEmphasize(emphasisWord))
 }
 
 internal data class RenderWordPlan(
