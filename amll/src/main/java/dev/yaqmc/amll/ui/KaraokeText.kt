@@ -44,6 +44,19 @@ internal fun KaraokeText(
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val text = line.text.ifEmpty { " " }
+    val annotationStyle = remember(style) {
+        style.copy(
+            fontSize = style.fontSize * 0.5f,
+            lineHeight = style.fontSize * 0.5f,
+        )
+    }
+    val annotations = remember(line.words, annotationStyle, measurer) {
+        measureWordAnnotations(
+            words = line.words,
+            measurer = measurer,
+            annotationStyle = annotationStyle,
+        )
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val widthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
@@ -54,17 +67,26 @@ internal fun KaraokeText(
                 constraints = Constraints(maxWidth = widthPx),
             )
         }
-        val height = with(density) { layout.size.height.toDp() }
         val fontSizePx = with(density) { style.fontSize.toPx() }
         val fadeWidthPx = fontSizePx * fadeWidthEm.coerceAtLeast(0.0001f)
+        val annotationGapPx = fontSizePx * 0.05f
+        val rubyHeightPx = annotations.maxOfOrNull { it.ruby?.size?.height ?: 0 }?.toFloat() ?: 0f
+        val romanHeightPx = annotations.maxOfOrNull { it.roman?.size?.height ?: 0 }?.toFloat() ?: 0f
+        val rubyReservePx = if (rubyHeightPx > 0f) rubyHeightPx + annotationGapPx else 0f
+        val romanReservePx = if (romanHeightPx > 0f) romanHeightPx + annotationGapPx else 0f
+        val baseOffsetY = rubyReservePx
+        val totalHeightPx = layout.size.height + rubyReservePx + romanReservePx
+        val totalHeight = with(density) { totalHeightPx.toDp() }
 
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(max(minimumHeight.value, height.value).dp)
+                .height(max(minimumHeight.value, totalHeight.value).dp)
         ) {
             if (line.text.isEmpty()) {
-                drawText(layout, color = inactiveColor)
+                withTransform({ translate(top = baseOffsetY) }) {
+                    drawText(layout, color = inactiveColor)
+                }
                 return@Canvas
             }
 
@@ -105,6 +127,7 @@ internal fun KaraokeText(
                             wordMotion = wordMotion,
                             characterMotion = characterMotion,
                             fontSizePx = fontSizePx,
+                            baseOffsetY = baseOffsetY,
                             activeColor = activeColor,
                             inactiveColor = inactiveColor,
                         )
@@ -115,6 +138,22 @@ internal fun KaraokeText(
                         geometry = geometry,
                         motion = wordMotion,
                         fontSizePx = fontSizePx,
+                        baseOffsetY = baseOffsetY,
+                        active = active,
+                        activeColor = activeColor,
+                        inactiveColor = inactiveColor,
+                    )
+                }
+
+                geometry.bounds?.let { bounds ->
+                    drawWordAnnotations(
+                        word = word,
+                        layout = annotations.getOrElse(wordIndex) { WordAnnotationLayout() },
+                        baseBounds = bounds,
+                        baseOffsetY = baseOffsetY,
+                        wordTranslateY = wordMotion.translateYEm * fontSizePx,
+                        annotationGapPx = annotationGapPx,
+                        positionMs = positionMs,
                         active = active,
                         activeColor = activeColor,
                         inactiveColor = inactiveColor,
@@ -152,12 +191,13 @@ private fun DrawScope.drawWord(
     geometry: WordGeometry,
     motion: WordMotion,
     fontSizePx: Float,
+    baseOffsetY: Float,
     active: Boolean,
     activeColor: Color,
     inactiveColor: Color,
 ) {
     if (geometry.bounds == null) return
-    val yOffset = motion.translateYEm * fontSizePx
+    val yOffset = baseOffsetY + motion.translateYEm * fontSizePx
 
     withTransform({ translate(top = yOffset) }) {
         clipPath(geometry.full) {
@@ -175,11 +215,13 @@ private fun DrawScope.drawCharacter(
     wordMotion: WordMotion,
     characterMotion: CharacterMotion,
     fontSizePx: Float,
+    baseOffsetY: Float,
     activeColor: Color,
     inactiveColor: Color,
 ) {
     val xOffset = characterMotion.translateXEm * fontSizePx
-    val yOffset = (wordMotion.translateYEm + characterMotion.translateYEm) * fontSizePx
+    val yOffset = baseOffsetY +
+        (wordMotion.translateYEm + characterMotion.translateYEm) * fontSizePx
     val pivot = geometry.bounds.center
 
     // Text-shadow is not available as a first-class Compose TextLayout draw effect on Android 8.
