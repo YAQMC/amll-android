@@ -24,8 +24,11 @@ data class AMLLStyle(
     // Upstream background vocals are rendered at ~0.7em and stay intentionally subdued.
     val backgroundLineScale: Float = 0.70f,
     val backgroundAlpha: Float = 0.40f,
-    // Upstream's background-line spring starts around -80 CSS px. dp is the closest native unit.
+    // Kept for source compatibility with the bootstrap; v8 derives actual slide distance from
+    // the background row height like AMLL (80 slide units == 80% of row height).
     val backgroundSlide: Dp = 80.dp,
+    // Mirrors AMLL's setAlwaysPostpositionBackground option.
+    val alwaysPostpositionBackground: Boolean = false,
     val lineSpacing: Dp = 18.dp,
     val horizontalPadding: Dp = 28.dp,
     val verticalPadding: Dp = 120.dp,

@@ -4,6 +4,8 @@ import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.animateFloatAsState
@@ -47,6 +49,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @Composable
 fun AMLLPlayer(
@@ -80,9 +83,6 @@ fun AMLLPlayer(
     val isUserDragging by listState.interactionSource.collectIsDraggedAsState()
     var autoAlignSuspended by remember { mutableStateOf(false) }
 
-    // Match AMLL's interaction model: once the user takes control of the lyric list, automatic
-    // focus movement is suspended. Compose owns the actual fling physics; the five-second resume
-    // timer begins only after both the finger drag and native inertia have fully stopped.
     LaunchedEffect(isUserDragging, style.autoAlignResumeDelayMs) {
         if (isUserDragging) {
             autoAlignSuspended = true
@@ -113,8 +113,6 @@ fun AMLLPlayer(
         val focusOffsetPx = with(density) { style.focusOffset.roundToPx() }
         val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusItemIndex }
         if (visible == null) {
-            // Large seek / first layout: establish the destination immediately enough that the
-            // spring does not spend frames traversing dozens of off-screen items.
             listState.animateScrollToItem(
                 index = focusItemIndex,
                 scrollOffset = -focusOffsetPx,
@@ -178,9 +176,6 @@ fun AMLLPlayer(
                         inactiveAlphaForDistance(distance, style)
                     }
 
-                    // During an interlude AMLL conceptually focuses the gap between two lines. The
-                    // next line becomes scrollToIndex while the preceding line remains the latest
-                    // highlighted line, preserving the upstream blur asymmetry around the dots.
                     val blurScrollToIndex = when {
                         activeInterlude != null -> {
                             (activeInterlude.anchorGroupIndex + 1).coerceIn(0, groups.lastIndex)
@@ -244,8 +239,10 @@ private fun LyricGroup(
     val main = group.main
     val mainAlignment = if (main.isDuet) Alignment.End else Alignment.Start
     val mainTextAlign = if (main.isDuet) TextAlign.End else TextAlign.Start
-    val density = LocalDensity.current
-    val backgroundSlidePx = with(density) { style.backgroundSlide.roundToPx() }
+    val backgroundFirst = shouldPlaceBackgroundFirst(
+        group = group,
+        alwaysPostpositionBackground = style.alwaysPostpositionBackground,
+    )
 
     Column(
         modifier = Modifier
@@ -260,9 +257,6 @@ private fun LyricGroup(
                     TransformOrigin(0f, 0.5f)
                 }
 
-                // Android's native RenderEffect backend is available from API 31. On older
-                // versions we deliberately keep only AMLL's opacity/scale falloff instead of
-                // software-blurring whole lyric groups every frame.
                 renderEffect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurRadiusPx > 0.01f) {
                     BlurEffect(
                         radiusX = blurRadiusPx,
@@ -279,6 +273,18 @@ private fun LyricGroup(
             },
         horizontalAlignment = mainAlignment,
     ) {
+        val background = group.background
+        if (background != null && backgroundFirst) {
+            BackgroundVocal(
+                line = background,
+                mainIsDuet = main.isDuet,
+                active = active,
+                placedFirst = true,
+                positionMs = positionMs,
+                style = style,
+            )
+        }
+
         KaraokeText(
             line = main,
             positionMs = positionMs,
@@ -313,43 +319,77 @@ private fun LyricGroup(
             )
         }
 
-        val background = group.background
-        if (background != null) {
-            AnimatedVisibility(
-                visible = active,
-                enter = fadeIn(animationSpec = tween(220)) + slideInVertically(
-                    animationSpec = spring(dampingRatio = 0.82f, stiffness = 180f),
-                    initialOffsetY = { -backgroundSlidePx },
+        if (background != null && !backgroundFirst) {
+            BackgroundVocal(
+                line = background,
+                mainIsDuet = main.isDuet,
+                active = active,
+                placedFirst = false,
+                positionMs = positionMs,
+                style = style,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackgroundVocal(
+    line: LyricLine,
+    mainIsDuet: Boolean,
+    active: Boolean,
+    placedFirst: Boolean,
+    positionMs: Long,
+    style: AMLLStyle,
+) {
+    val alignment = if (mainIsDuet) Alignment.End else Alignment.Start
+    val textAlign = if (mainIsDuet) TextAlign.End else TextAlign.Start
+    val hiddenDirection = if (placedFirst) 1f else -1f
+
+    AnimatedVisibility(
+        visible = active,
+        enter = fadeIn(animationSpec = tween(220)) +
+            slideInVertically(
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = 180f),
+                initialOffsetY = { height -> (height * 0.8f * hiddenDirection).roundToInt() },
+            ) +
+            scaleIn(
+                initialScale = 0.8f,
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = 180f),
+            ),
+        exit = fadeOut(animationSpec = tween(180)) +
+            slideOutVertically(
+                animationSpec = spring(dampingRatio = 0.9f, stiffness = 240f),
+                targetOffsetY = { height -> (height * 0.8f * hiddenDirection).roundToInt() },
+            ) +
+            scaleOut(
+                targetScale = 0.8f,
+                animationSpec = spring(dampingRatio = 0.9f, stiffness = 240f),
+            ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    top = if (placedFirst) 0.dp else 4.dp,
+                    bottom = if (placedFirst) 4.dp else 0.dp,
+                )
+                .graphicsLayer { alpha = style.backgroundAlpha },
+            horizontalAlignment = alignment,
+        ) {
+            KaraokeText(
+                line = line,
+                positionMs = positionMs,
+                style = TextStyle(
+                    fontSize = style.lineFontSize * style.backgroundLineScale,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = textAlign,
                 ),
-                exit = fadeOut(animationSpec = tween(180)) + slideOutVertically(
-                    animationSpec = spring(dampingRatio = 0.9f, stiffness = 240f),
-                    targetOffsetY = { -backgroundSlidePx },
-                ),
-            ) {
-                val backgroundTextAlign = if (background.isDuet) TextAlign.End else TextAlign.Start
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp)
-                        .graphicsLayer { this.alpha = style.backgroundAlpha },
-                    horizontalAlignment = if (background.isDuet) Alignment.End else Alignment.Start,
-                ) {
-                    KaraokeText(
-                        line = background,
-                        positionMs = positionMs,
-                        style = TextStyle(
-                            fontSize = style.lineFontSize * style.backgroundLineScale,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = backgroundTextAlign,
-                        ),
-                        active = true,
-                        activeColor = style.activeColor,
-                        inactiveColor = style.inactiveColor,
-                        minimumHeight = 28.dp,
-                        fadeWidthEm = style.wordFadeWidthEm,
-                    )
-                }
-            }
+                active = true,
+                activeColor = style.activeColor,
+                inactiveColor = style.inactiveColor,
+                minimumHeight = 28.dp,
+                fadeWidthEm = style.wordFadeWidthEm,
+            )
         }
     }
 }
