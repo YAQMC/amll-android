@@ -33,7 +33,7 @@ class AMLLPlayerState(
         _lyricLines = lines.sortedBy(LyricLine::startTimeMs)
     }
 
-    fun setPlaying(isPlaying: Boolean) {
+    fun updatePlaybackState(isPlaying: Boolean) {
         this.isPlaying = isPlaying
     }
 
