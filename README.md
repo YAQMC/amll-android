@@ -23,17 +23,20 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 
 ## Current replication status
 
-The first twenty-two AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity and mask-alpha paths instead of relying on generic Compose defaults:
+The first twenty-six AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity, mask and responsive-wrapper behavior instead of relying on generic Compose defaults:
 
 - active/inactive main-line scale follows AMLL's `1.0 / 0.97` behavior using the upstream physical scale spring
+- `enableScale` mirrors upstream `setEnableScale()` and disables only the main-line 97% treatment; background-vocal 75% inactive scale remains independent
 - background lyrics stay grouped with their primary line rather than becoming independent scroll targets
 - background-vocal size/opacity, first-word ordering and always-postposition behavior follow AMLL's grouped presentation model
 - background-vocal wrapper motion is driven by the same dynamic vertical spring policy as AMLL's `bgSlideY`, including `+80 / -80 -> 0`, measured-height translation and `0.8 -> 1.0` wrapper scale
 - background-first vocals unfold their occupied measured height with the slide spring; post-positioned vocals keep AMLL's in-flow/out-of-flow visibility semantics
 - background lyric lines have their own independent `1.0 / 0.75` scale spring instead of inheriting the main line's `0.97` scale
-- word highlighting uses a soft leading-edge mask with the Android-like `1em` fade-width default
-- AMLL SOLID/GRADIENT mask endpoints now use the upstream alpha targets (`0.2`, `1.0`, `0.4`) and mode-specific `450ms / 300ms ease-out` transitions
+- word highlighting uses AMLL's continuous word-level bright-to-dark gradient with the Android-like `1em` fade-width default
+- gradient geometry uses measured word height for fade width and keeps AMLL's half-fade lead-in/tail around each timed word
+- AMLL SOLID/GRADIENT mask endpoints use the upstream alpha targets (`0.2`, `1.0`, `0.4`) and mode-specific `450ms / 300ms ease-out` transitions
 - dynamic group opacity follows upstream targets: highlighted groups use `0.85`, ordinary dynamic rows stay at `1.0`, with the DOM-style `0.4s ease` transition instead of distance fading
+- `hidePassedLines` follows AMLL's playing-only passed-boundary behavior and uses the same near-zero `1e-4` target; paused lyrics are restored
 - every word keeps AMLL's regular playback-time-derived upward float, including emphasized words
 - long-word emphasis uses AMLL's eligibility, duration mapping, two-half easing, final-word amplification and grapheme stagger
 - emphasized graphemes reproduce AMLL's horizontal push, vertical lift, scale and duration-derived glow envelope
@@ -52,12 +55,13 @@ The first twenty-two AMLL-parity passes now cover the main timing, annotation, i
 - Top / Center / Bottom focus anchors are supported and use the target item's measured height like upstream layout
 - leading/trailing list space expands from the real composed viewport size so the first and last lyric items can also reach the configured focus anchor
 - lyric-group vertical rhythm comes from AMLL's measured `0.4em` wrapper padding and `0.3em` main/background gap rather than a fixed global dp gap
+- horizontal wrapper padding is responsive like upstream: `20dp` at <=500dp composed width, otherwise `1em`; hosts may explicitly override it
 - secondary lyric defaults follow AMLL's `0.5em` font, `0.75em` total line-height and 0.3 opacity hierarchy
 - songs containing duet lines measure each speaker at 85% content width on the correct side, so wrapping and group height follow AMLL's 15% opposite-speaker inset
 - lyric typography uses the react-full default weight 600 consistently across main, secondary and background content; active-state changes no longer alter glyph metrics or wrapping
-- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, line-layout, background-motion, line-scale, opacity, mask and typography unit tests
+- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, line-layout, background-motion, line-scale, opacity, continuous-mask, responsive-padding, behavior-flag and typography unit tests
 
-The renderer is still evolving. Remaining fidelity work includes replacing the current segmented soft word-mask edge with upstream's continuous bright-to-dark gradient, pixel-identical CSS-style text-shadow blur/glow, responsive wrapper-horizontal-padding parity, deeper per-word nowrap/ruby layout parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, and additional platform-specific performance tuning.
+The renderer is still evolving. Remaining fidelity work includes pixel-identical CSS-style text-shadow blur/glow, deeper ruby/roman annotation-mask parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, optional upstream behavior/config switches that are not yet surfaced, and additional platform-specific performance tuning.
 
 ## Non-goals for the first milestone
 
