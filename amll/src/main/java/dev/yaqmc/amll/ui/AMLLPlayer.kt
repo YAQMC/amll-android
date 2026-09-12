@@ -55,10 +55,19 @@ fun AMLLPlayer(
     val listState = rememberLazyListState()
     val density = LocalDensity.current
     val groups = remember(state.lyricLines) { groupLyricLines(state.lyricLines) }
+    val interludes = remember(groups) { calculateInterludes(groups) }
+    val listItems = remember(groups, interludes) { buildLyricListItems(groups, interludes) }
+
     val activeLineIndex = state.activeLineIndex
     val activeGroupIndex = remember(groups, activeLineIndex) {
         groups.indexOfFirst { it.mainIndex == activeLineIndex }
     }
+    val activeInterlude = activeInterludeAt(interludes, state.positionMs)
+    val focusItemIndex = lyricFocusItemIndex(
+        items = listItems,
+        activeGroupIndex = activeGroupIndex,
+        activeInterlude = activeInterlude,
+    )
 
     val isUserDragging by listState.interactionSource.collectIsDraggedAsState()
     var autoAlignSuspended by remember { mutableStateOf(false) }
@@ -85,21 +94,21 @@ fun AMLLPlayer(
     }
 
     LaunchedEffect(
-        activeGroupIndex,
-        groups.size,
+        focusItemIndex,
+        listItems.size,
         style.focusOffset,
         autoAlignSuspended,
     ) {
         if (autoAlignSuspended) return@LaunchedEffect
-        if (activeGroupIndex !in groups.indices) return@LaunchedEffect
+        if (focusItemIndex !in listItems.indices) return@LaunchedEffect
 
         val focusOffsetPx = with(density) { style.focusOffset.roundToPx() }
-        val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeGroupIndex }
+        val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusItemIndex }
         if (visible == null) {
             // Large seek / first layout: establish the destination immediately enough that the
             // spring does not spend frames traversing dozens of off-screen items.
             listState.animateScrollToItem(
-                index = activeGroupIndex,
+                index = focusItemIndex,
                 scrollOffset = -focusOffsetPx,
             )
         } else {
@@ -127,38 +136,62 @@ fun AMLLPlayer(
         verticalArrangement = Arrangement.spacedBy(style.lineSpacing),
     ) {
         itemsIndexed(
-            items = groups,
-            key = { index, group -> "${group.main.startTimeMs}:$index" },
-        ) { index, group ->
-            val active = index == activeGroupIndex
-            val distance = if (activeGroupIndex >= 0) abs(index - activeGroupIndex) else Int.MAX_VALUE
-            val targetScale = if (active) style.activeScale else style.inactiveScale
-            val targetAlpha = if (active) {
-                style.activeAlpha
-            } else {
-                inactiveAlphaForDistance(distance, style)
+            items = listItems,
+            key = { _, item -> item.stableKey },
+        ) { _, item ->
+            when (item) {
+                is LyricListItem.Interlude -> {
+                    val anchor = item.interlude.anchorGroupIndex
+                    val alignEnd = anchor in groups.indices && groups[anchor].main.isDuet
+                    InterludeDots(
+                        interlude = item.interlude,
+                        positionMs = state.positionMs,
+                        style = style,
+                        alignEnd = alignEnd,
+                    )
+                }
+
+                is LyricListItem.Group -> {
+                    val groupIndex = item.groupIndex
+                    val group = item.group
+                    val active = activeInterlude == null && groupIndex == activeGroupIndex
+                    val referenceGroupIndex = when {
+                        activeInterlude != null && activeInterlude.anchorGroupIndex >= 0 -> {
+                            activeInterlude.anchorGroupIndex
+                        }
+                        activeGroupIndex >= 0 -> activeGroupIndex
+                        else -> 0
+                    }
+                    val distance = abs(groupIndex - referenceGroupIndex)
+                    val targetScale = if (active) style.activeScale else style.inactiveScale
+                    val targetAlpha = if (active) {
+                        style.activeAlpha
+                    } else {
+                        inactiveAlphaForDistance(distance, style)
+                    }
+
+                    val scale by animateFloatAsState(
+                        targetValue = targetScale,
+                        animationSpec = spring(stiffness = 260f, dampingRatio = 0.82f),
+                        label = "amll-line-scale",
+                    )
+                    val alpha by animateFloatAsState(
+                        targetValue = targetAlpha,
+                        animationSpec = spring(stiffness = 310f, dampingRatio = 0.88f),
+                        label = "amll-line-alpha",
+                    )
+
+                    LyricGroup(
+                        group = group,
+                        active = active,
+                        positionMs = state.positionMs,
+                        style = style,
+                        scale = scale,
+                        alpha = alpha,
+                        onLineClick = onLineClick,
+                    )
+                }
             }
-
-            val scale by animateFloatAsState(
-                targetValue = targetScale,
-                animationSpec = spring(stiffness = 260f, dampingRatio = 0.82f),
-                label = "amll-line-scale",
-            )
-            val alpha by animateFloatAsState(
-                targetValue = targetAlpha,
-                animationSpec = spring(stiffness = 310f, dampingRatio = 0.88f),
-                label = "amll-line-alpha",
-            )
-
-            LyricGroup(
-                group = group,
-                active = active,
-                positionMs = state.positionMs,
-                style = style,
-                scale = scale,
-                alpha = alpha,
-                onLineClick = onLineClick,
-            )
         }
     }
 }
