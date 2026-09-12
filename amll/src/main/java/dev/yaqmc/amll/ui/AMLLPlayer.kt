@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import dev.yaqmc.amll.model.LyricLine
 import dev.yaqmc.amll.state.AMLLPlayerState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlin.math.abs
@@ -79,6 +80,31 @@ fun AMLLPlayer(
         activeGroupIndex = activeGroupIndex,
         activeInterlude = activeInterlude,
     )
+    val focusIntervalMs = remember(groups, activeGroupIndex) {
+        if (activeGroupIndex > 0 && activeGroupIndex < groups.size) {
+            (groups[activeGroupIndex].main.startTimeMs - groups[activeGroupIndex - 1].main.startTimeMs)
+                .coerceAtLeast(0L)
+        } else {
+            null
+        }
+    }
+
+    val seekDetector = remember { PlaybackSeekDetector() }
+    var lastSeekPositionMs by remember { mutableStateOf<Long?>(null) }
+    var seekEpoch by remember { mutableStateOf(0) }
+
+    LaunchedEffect(state, state.lyricLines) {
+        seekDetector.reset()
+        lastSeekPositionMs = null
+        snapshotFlow {
+            Triple(state.positionMs, state.isPlaying, state.positionUpdateVersion)
+        }.collect { (positionMs, isPlaying, _) ->
+            if (seekDetector.detect(positionMs, isPlaying)) {
+                lastSeekPositionMs = positionMs
+                seekEpoch += 1
+            }
+        }
+    }
 
     var autoAlignSuspended by remember { mutableStateOf(false) }
     var touchPointerDown by remember { mutableStateOf(false) }
@@ -124,13 +150,23 @@ fun AMLLPlayer(
         listItems.size,
         style.focusOffset,
         autoAlignSuspended,
+        focusIntervalMs,
+        activeInterlude,
+        seekEpoch,
     ) {
         if (autoAlignSuspended) return@LaunchedEffect
         if (focusItemIndex !in listItems.indices) return@LaunchedEffect
 
+        val focusSpring = focusSpringSpec(
+            isSeeking = lastSeekPositionMs == state.positionMs,
+            isInterludeActive = activeInterlude != null,
+            intervalMs = focusIntervalMs,
+        )
         val focusOffsetPx = with(density) { style.focusOffset.roundToPx() }
         val visible = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusItemIndex }
         if (visible == null) {
+            // Compose does not expose a custom AnimationSpec for animateScrollToItem. Far jumps keep
+            // its native animation; line-to-line visible focus motion uses the exact mapped AMLL spring.
             listState.animateScrollToItem(
                 index = focusItemIndex,
                 scrollOffset = -focusOffsetPx,
@@ -142,8 +178,8 @@ fun AMLLPlayer(
                 listState.animateScrollBy(
                     value = delta,
                     animationSpec = spring(
-                        dampingRatio = 0.82f,
-                        stiffness = 165f,
+                        dampingRatio = focusSpring.dampingRatio,
+                        stiffness = focusSpring.stiffness,
                     ),
                 )
             }

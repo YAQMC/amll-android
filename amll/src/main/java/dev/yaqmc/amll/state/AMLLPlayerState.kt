@@ -23,6 +23,13 @@ class AMLLPlayerState(
     var positionMs: Long by mutableLongStateOf(initialPositionMs.coerceAtLeast(0L))
         private set
 
+    /**
+     * Internal sequence for consumers that must observe every pushed media-time sample, including
+     * repeated equal values that Compose's value state would otherwise coalesce.
+     */
+    internal var positionUpdateVersion: Long by mutableLongStateOf(0L)
+        private set
+
     var isPlaying: Boolean by mutableStateOf(initialIsPlaying)
         private set
 
@@ -39,6 +46,7 @@ class AMLLPlayerState(
 
     fun seekTo(positionMs: Long) {
         this.positionMs = positionMs.coerceAtLeast(0L)
+        positionUpdateVersion++
     }
 
     fun update(positionMs: Long) = seekTo(positionMs)
