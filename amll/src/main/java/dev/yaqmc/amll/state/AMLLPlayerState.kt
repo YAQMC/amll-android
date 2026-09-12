@@ -12,6 +12,7 @@ class AMLLPlayerState(
     lyricLines: List<LyricLine> = emptyList(),
     initialPositionMs: Long = 0L,
     initialIsPlaying: Boolean = true,
+    initialAutoSeekDetectionEnabled: Boolean = true,
 ) {
     private var _lyricLines: List<LyricLine> by mutableStateOf(
         lyricLines.sortedBy(LyricLine::startTimeMs)
@@ -30,7 +31,19 @@ class AMLLPlayerState(
     internal var positionUpdateVersion: Long by mutableLongStateOf(0L)
         private set
 
+    /**
+     * Separate sequence for host-declared seeks. Ordinary playback-clock samples increment only
+     * [positionUpdateVersion], while [seekTo] increments both so the renderer can preserve an
+     * explicit seek even when automatic seek inference is disabled.
+     */
+    internal var explicitSeekVersion: Long by mutableLongStateOf(0L)
+        private set
+
     var isPlaying: Boolean by mutableStateOf(initialIsPlaying)
+        private set
+
+    /** Mirrors upstream `setEnableAutoSeekDetection()`, which defaults to enabled. */
+    var autoSeekDetectionEnabled: Boolean by mutableStateOf(initialAutoSeekDetectionEnabled)
         private set
 
     val activeLineIndex: Int
@@ -44,22 +57,34 @@ class AMLLPlayerState(
         this.isPlaying = isPlaying
     }
 
+    fun updateAutoSeekDetectionEnabled(enable: Boolean) {
+        autoSeekDetectionEnabled = enable
+    }
+
     fun seekTo(positionMs: Long) {
-        this.positionMs = positionMs.coerceAtLeast(0L)
-        positionUpdateVersion++
+        pushPosition(positionMs)
+        explicitSeekVersion++
     }
 
     /**
      * Preferred host-integration entry point when a playback clock delivers position and play state
      * together. The position sample is still observed even when it is equal to the previous value,
-     * preserving AMLL seek/stall inference semantics.
+     * preserving AMLL seek/stall inference semantics without marking every clock tick as an explicit
+     * seek.
      */
     fun update(positionMs: Long, isPlaying: Boolean) {
         this.isPlaying = isPlaying
-        seekTo(positionMs)
+        pushPosition(positionMs)
     }
 
-    fun update(positionMs: Long) = seekTo(positionMs)
+    fun update(positionMs: Long) {
+        pushPosition(positionMs)
+    }
+
+    private fun pushPosition(positionMs: Long) {
+        this.positionMs = positionMs.coerceAtLeast(0L)
+        positionUpdateVersion++
+    }
 }
 
 internal fun findActiveLineIndex(lines: List<LyricLine>, positionMs: Long): Int {

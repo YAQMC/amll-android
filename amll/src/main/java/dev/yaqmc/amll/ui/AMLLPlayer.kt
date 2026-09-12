@@ -46,6 +46,13 @@ import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private data class PlaybackClockSample(
+    val positionMs: Long,
+    val isPlaying: Boolean,
+    val positionUpdateVersion: Long,
+    val explicitSeekVersion: Long,
+)
+
 @Composable
 fun AMLLPlayer(
     state: AMLLPlayerState,
@@ -124,14 +131,29 @@ fun AMLLPlayer(
     var lastSeekPositionMs by remember { mutableStateOf<Long?>(null) }
     var seekEpoch by remember { mutableStateOf(0) }
 
-    LaunchedEffect(state, state.lyricLines) {
+    LaunchedEffect(state, state.lyricLines, state.autoSeekDetectionEnabled) {
         seekDetector.reset()
         lastSeekPositionMs = null
+        var lastExplicitSeekVersion = state.explicitSeekVersion
+
         snapshotFlow {
-            Triple(state.positionMs, state.isPlaying, state.positionUpdateVersion)
-        }.collect { (positionMs, isPlaying, _) ->
-            if (seekDetector.detect(positionMs, isPlaying)) {
-                lastSeekPositionMs = positionMs
+            PlaybackClockSample(
+                positionMs = state.positionMs,
+                isPlaying = state.isPlaying,
+                positionUpdateVersion = state.positionUpdateVersion,
+                explicitSeekVersion = state.explicitSeekVersion,
+            )
+        }.collect { sample ->
+            val explicitSeek = sample.explicitSeekVersion != lastExplicitSeekVersion
+            lastExplicitSeekVersion = sample.explicitSeekVersion
+            val detectedSeek = if (state.autoSeekDetectionEnabled) {
+                seekDetector.detect(sample.positionMs, sample.isPlaying)
+            } else {
+                false
+            }
+
+            if (explicitSeek || detectedSeek) {
+                lastSeekPositionMs = sample.positionMs
                 seekEpoch += 1
             }
         }
