@@ -188,10 +188,17 @@ fun AMLLPlayer(
                         if (!hasTouch && justPressed != null) {
                             hasTouch = true
                             touchPointerDown = true
+                            lastManualInput = ManualScrollInputType.Touch
                             touchIntent.onDown(justPressed.position.x, justPressed.position.y)
                             // A touch interrupts an existing resume timer even if it becomes only a tap.
                             manualInteractionEpoch += 1
                         } else if (hasTouch && justPressed != null && pressedTouches.size > 1) {
+                            val anchor = pressedTouches.first()
+                            touchIntent.reanchor(anchor.position.x, anchor.position.y)
+                        }
+
+                        // When the current anchor finger is lifted, re-anchor before evaluating motion.
+                        if (hasTouch && justReleased && pressedTouches.isNotEmpty()) {
                             val anchor = pressedTouches.first()
                             touchIntent.reanchor(anchor.position.x, anchor.position.y)
                         }
@@ -203,11 +210,6 @@ fun AMLLPlayer(
                                 autoAlignSuspended = true
                                 manualInteractionEpoch += 1
                             }
-                        }
-
-                        if (hasTouch && justReleased && pressedTouches.isNotEmpty()) {
-                            val anchor = pressedTouches.first()
-                            touchIntent.reanchor(anchor.position.x, anchor.position.y)
                         }
 
                         if (hasTouch && pressedTouches.isEmpty()) {
