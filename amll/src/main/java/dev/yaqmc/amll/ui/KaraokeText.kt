@@ -19,6 +19,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -58,19 +59,40 @@ internal fun KaraokeText(
             annotationStyle = annotationStyle,
         )
     }
-    val chunkWidthsPx = remember(renderPlan.chunks, style, measurer) {
-        renderPlan.chunks.map { chunk ->
-            if (chunk.text.isEmpty()) {
+    val baseWordWidthsPx = remember(renderWords, style, measurer) {
+        renderWords.map { word ->
+            if (word.text.isEmpty()) {
                 0f
             } else {
                 measurer.measure(
-                    text = chunk.text,
+                    text = word.text,
                     style = style,
                     softWrap = false,
                     maxLines = 1,
                 ).size.width.toFloat()
             }
         }
+    }
+    val annotationFontSizePx = with(density) { annotationStyle.fontSize.toPx() }
+    val romanEndPaddingPx = annotationFontSizePx * 0.3f
+    val wordBoxWidthsPx = remember(baseWordWidthsPx, annotations, romanEndPaddingPx) {
+        baseWordWidthsPx.indices.map { index ->
+            val annotation = annotations.getOrElse(index) { WordAnnotationLayout() }
+            resolveWordBoxWidthPx(
+                baseWidthPx = baseWordWidthsPx[index],
+                romanWidthPx = annotation.roman?.size?.width?.toFloat(),
+                rubyWidthPx = annotation.ruby?.size?.width?.toFloat(),
+                romanEndPaddingPx = romanEndPaddingPx,
+            )
+        }
+    }
+    val chunkWidthsPx = remember(renderPlan, wordBoxWidthsPx) {
+        resolveChunkWidthsPx(renderPlan, wordBoxWidthsPx)
+    }
+    val wordBoxAlignment = when (style.textAlign) {
+        TextAlign.End, TextAlign.Right -> WordBoxAlignment.End
+        TextAlign.Center -> WordBoxAlignment.Center
+        else -> WordBoxAlignment.Start
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -80,6 +102,21 @@ internal fun KaraokeText(
                 plan = renderPlan,
                 chunkWidthsPx = chunkWidthsPx,
                 containerWidthPx = widthPx.toFloat(),
+            )
+        }
+        val wordBoxTranslationsPx = remember(
+            renderPlan,
+            balanced.breaks,
+            baseWordWidthsPx,
+            wordBoxWidthsPx,
+            wordBoxAlignment,
+        ) {
+            resolveWordBoxTranslationsPx(
+                plan = renderPlan,
+                breaks = balanced.breaks,
+                baseWidthsPx = baseWordWidthsPx,
+                wordBoxWidthsPx = wordBoxWidthsPx,
+                alignment = wordBoxAlignment,
             )
         }
         val text = balanced.text.ifEmpty { " " }
@@ -99,8 +136,8 @@ internal fun KaraokeText(
         val romanHeightPx = annotations.maxOfOrNull { it.roman?.size?.height ?: 0 }?.toFloat() ?: 0f
         val rubyReservePx = if (rubyHeightPx > 0f) rubyHeightPx + annotationGapPx else 0f
         val romanReservePx = if (romanHeightPx > 0f) romanHeightPx + annotationGapPx else 0f
-        val baseOffsetY = rubyReservePx
-        val totalHeightPx = layout.size.height + rubyReservePx + romanReservePx
+        val annotationRowExtraPx = rubyReservePx + romanReservePx
+        val totalHeightPx = layout.size.height + layout.lineCount * annotationRowExtraPx
         val totalHeight = with(density) { totalHeightPx.toDp() }
 
         Canvas(
@@ -109,7 +146,7 @@ internal fun KaraokeText(
                 .height(max(minimumHeight.value, totalHeight.value).dp)
         ) {
             if (renderWords.isEmpty() || balanced.text.isEmpty()) {
-                withTransform({ translate(top = baseOffsetY) }) {
+                withTransform({ translate(top = rubyReservePx) }) {
                     drawText(layout, color = inactiveColor)
                 }
                 return@Canvas
@@ -134,6 +171,10 @@ internal fun KaraokeText(
                 chunk.words.forEachIndexed { localIndex, word ->
                     val globalIndex = chunkStartAtom + localIndex
                     val geometry = geometries[localIndex]
+                    val wordOffset = balanced.wordOffsets.getOrElse(globalIndex) { 0 }
+                    val lineIndex = lineIndexForOffset(layout, wordOffset)
+                    val baseTranslateX = wordBoxTranslationsPx.getOrElse(globalIndex) { 0f }
+                    val baseTranslateY = rubyReservePx + lineIndex * annotationRowExtraPx
                     val wordMotion = if (active) {
                         wordMotionAt(
                             word = word,
@@ -161,7 +202,8 @@ internal fun KaraokeText(
                                 wordMotion = wordMotion,
                                 characterMotion = characterMotion,
                                 fontSizePx = fontSizePx,
-                                baseOffsetY = baseOffsetY,
+                                baseTranslateX = baseTranslateX,
+                                baseTranslateY = baseTranslateY,
                                 activeColor = activeColor,
                                 inactiveColor = inactiveColor,
                             )
@@ -172,7 +214,8 @@ internal fun KaraokeText(
                             geometry = geometry,
                             motion = wordMotion,
                             fontSizePx = fontSizePx,
-                            baseOffsetY = baseOffsetY,
+                            baseTranslateX = baseTranslateX,
+                            baseTranslateY = baseTranslateY,
                             active = active,
                             activeColor = activeColor,
                             inactiveColor = inactiveColor,
@@ -184,7 +227,8 @@ internal fun KaraokeText(
                             word = word,
                             layout = annotations.getOrElse(globalIndex) { WordAnnotationLayout() },
                             baseBounds = bounds,
-                            baseOffsetY = baseOffsetY,
+                            baseTranslateX = baseTranslateX,
+                            baseTranslateY = baseTranslateY,
                             wordTranslateY = wordMotion.translateYEm * fontSizePx,
                             annotationGapPx = annotationGapPx,
                             positionMs = positionMs,
@@ -199,6 +243,12 @@ internal fun KaraokeText(
             }
         }
     }
+}
+
+private fun lineIndexForOffset(layout: TextLayoutResult, offset: Int): Int {
+    val length = layout.layoutInput.text.length
+    if (length <= 0) return 0
+    return layout.getLineForOffset(offset.coerceIn(0, length - 1))
 }
 
 private data class CharacterGeometry(
@@ -228,15 +278,16 @@ private fun DrawScope.drawWord(
     geometry: WordGeometry,
     motion: WordMotion,
     fontSizePx: Float,
-    baseOffsetY: Float,
+    baseTranslateX: Float,
+    baseTranslateY: Float,
     active: Boolean,
     activeColor: Color,
     inactiveColor: Color,
 ) {
     if (geometry.bounds == null) return
-    val yOffset = baseOffsetY + motion.translateYEm * fontSizePx
+    val yOffset = baseTranslateY + motion.translateYEm * fontSizePx
 
-    withTransform({ translate(top = yOffset) }) {
+    withTransform({ translate(left = baseTranslateX, top = yOffset) }) {
         clipPath(geometry.full) {
             drawText(layout, color = inactiveColor)
         }
@@ -252,12 +303,13 @@ private fun DrawScope.drawCharacter(
     wordMotion: WordMotion,
     characterMotion: CharacterMotion,
     fontSizePx: Float,
-    baseOffsetY: Float,
+    baseTranslateX: Float,
+    baseTranslateY: Float,
     activeColor: Color,
     inactiveColor: Color,
 ) {
-    val xOffset = characterMotion.translateXEm * fontSizePx
-    val yOffset = baseOffsetY +
+    val xOffset = baseTranslateX + characterMotion.translateXEm * fontSizePx
+    val yOffset = baseTranslateY +
         (wordMotion.translateYEm + characterMotion.translateYEm) * fontSizePx
     val pivot = geometry.bounds.center
 
