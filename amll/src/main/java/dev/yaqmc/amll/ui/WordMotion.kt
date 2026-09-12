@@ -60,8 +60,8 @@ internal fun wordMotionAt(
 /**
  * Native equivalent of upstream `createEmphasizeAnimation()` for one grapheme. [word] may be the
  * synthetic merged timing word of a render chunk while the caller keeps each child word's regular
- * float independent. [forceEmphasize] is used when upstream's `chunk.some(shouldEmphasize)` rule
- * activates a merged wrapper even if the synthetic merged word itself falls outside the text rule.
+ * float independent. When ruby exists, upstream uses total ruby JS-string length (UTF-16 code
+ * units) as the stagger anchor count while [totalCharacters] still controls horizontal push.
  */
 internal fun characterMotionAt(
     word: LyricWord,
@@ -77,7 +77,11 @@ internal fun characterMotionAt(
     }
 
     val params = emphasisParams(word, isLastWord)
-    val anchorCount = max(1, totalCharacters)
+    val rubyCharacterCount = word.ruby.sumOf { ruby -> ruby.text.length }
+    val anchorCount = max(
+        1,
+        if (rubyCharacterCount > 0) rubyCharacterCount else totalCharacters,
+    )
     val staggerMs = params.durationMs / 2.5f / anchorCount * characterIndex
     val characterStartMs = word.startTimeMs + staggerMs
 
@@ -144,7 +148,6 @@ private fun emphasizeEasing(x: Float): Float {
     }
 }
 
-/** Small bezier-easing compatible solver for the CSS cubic-bezier curves used by AMLL. */
 private fun cubicBezierYForX(x1: Float, y1: Float, x2: Float, y2: Float, x: Float): Float {
     val target = x.coerceIn(0f, 1f)
     var t = target
