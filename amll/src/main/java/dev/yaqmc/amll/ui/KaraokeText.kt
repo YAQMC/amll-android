@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -139,7 +140,6 @@ internal fun KaraokeText(
             )
         }
         val fontSizePx = with(density) { style.fontSize.toPx() }
-        val fadeWidthPx = fontSizePx * fadeWidthEm.coerceAtLeast(0.0001f)
         val annotationGapPx = fontSizePx * 0.05f
         val rubyHeightPx = annotations.maxOfOrNull { it.ruby?.size?.height ?: 0 }?.toFloat() ?: 0f
         val romanHeightPx = annotations.maxOfOrNull { it.roman?.size?.height ?: 0 }?.toFloat() ?: 0f
@@ -171,7 +171,7 @@ internal fun KaraokeText(
                         word = word,
                         wordOffset = balanced.wordOffsets.getOrElse(globalIndex) { 0 },
                         positionMs = positionMs,
-                        fadeWidthPx = fadeWidthPx,
+                        fadeWidthFactor = fadeWidthEm,
                     )
                 }
                 val totalChunkCharacters = geometries.sumOf { it.characters.size }
@@ -208,6 +208,7 @@ internal fun KaraokeText(
                             drawCharacter(
                                 layout = layout,
                                 geometry = character,
+                                wordMask = geometry.mask,
                                 wordMotion = wordMotion,
                                 characterMotion = characterMotion,
                                 fontSizePx = fontSizePx,
@@ -225,7 +226,6 @@ internal fun KaraokeText(
                             fontSizePx = fontSizePx,
                             baseTranslateX = baseTranslateX,
                             baseTranslateY = baseTranslateY,
-                            active = active,
                             activeColor = maskColors.bright,
                             inactiveColor = maskColors.dark,
                         )
@@ -262,18 +262,13 @@ private fun lineIndexForOffset(layout: TextLayoutResult, offset: Int): Int {
 
 private data class CharacterGeometry(
     val full: Path,
-    val solid: Path,
-    val midFade: Path,
-    val edgeFade: Path,
     val bounds: Rect,
 )
 
 private data class WordGeometry(
     val full: Path,
-    val solid: Path,
-    val midFade: Path,
-    val edgeFade: Path,
     val bounds: Rect?,
+    val mask: WordMaskGradientPx?,
     val characters: List<CharacterGeometry>,
 )
 
@@ -289,7 +284,6 @@ private fun DrawScope.drawWord(
     fontSizePx: Float,
     baseTranslateX: Float,
     baseTranslateY: Float,
-    active: Boolean,
     activeColor: Color,
     inactiveColor: Color,
 ) {
@@ -297,18 +291,20 @@ private fun DrawScope.drawWord(
     val yOffset = baseTranslateY + motion.translateYEm * fontSizePx
 
     withTransform({ translate(left = baseTranslateX, top = yOffset) }) {
-        clipPath(geometry.full) {
-            drawText(layout, color = inactiveColor)
-        }
-
-        if (!active) return@withTransform
-        drawHighlight(layout, geometry.solid, geometry.midFade, geometry.edgeFade, activeColor)
+        drawWordMask(
+            layout = layout,
+            path = geometry.full,
+            mask = geometry.mask,
+            brightColor = activeColor,
+            darkColor = inactiveColor,
+        )
     }
 }
 
 private fun DrawScope.drawCharacter(
     layout: TextLayoutResult,
     geometry: CharacterGeometry,
+    wordMask: WordMaskGradientPx?,
     wordMotion: WordMotion,
     characterMotion: CharacterMotion,
     fontSizePx: Float,
@@ -359,28 +355,37 @@ private fun DrawScope.drawCharacter(
             pivot = pivot,
         )
     }) {
-        clipPath(geometry.full) {
-            drawText(layout, color = inactiveColor)
-        }
-        drawHighlight(layout, geometry.solid, geometry.midFade, geometry.edgeFade, activeColor)
+        drawWordMask(
+            layout = layout,
+            path = geometry.full,
+            mask = wordMask,
+            brightColor = activeColor,
+            darkColor = inactiveColor,
+        )
     }
 }
 
-private fun DrawScope.drawHighlight(
+private fun DrawScope.drawWordMask(
     layout: TextLayoutResult,
-    solid: Path,
-    midFade: Path,
-    edgeFade: Path,
-    activeColor: Color,
+    path: Path,
+    mask: WordMaskGradientPx?,
+    brightColor: Color,
+    darkColor: Color,
 ) {
-    clipPath(solid) {
-        drawText(layout, color = activeColor)
-    }
-    clipPath(midFade) {
-        drawText(layout, color = activeColor.copy(alpha = activeColor.alpha * 0.62f))
-    }
-    clipPath(edgeFade) {
-        drawText(layout, color = activeColor.copy(alpha = activeColor.alpha * 0.28f))
+    clipPath(path) {
+        if (mask == null) {
+            drawText(layout, color = darkColor)
+            return@clipPath
+        }
+
+        drawText(
+            layout,
+            brush = Brush.horizontalGradient(
+                colors = listOf(brightColor, darkColor),
+                startX = mask.fadeStartX,
+                endX = mask.fadeEndX,
+            ),
+        )
     }
 }
 
@@ -389,76 +394,65 @@ private fun buildWordGeometry(
     word: LyricWord,
     wordOffset: Int,
     positionMs: Long,
-    fadeWidthPx: Float,
+    fadeWidthFactor: Float,
 ): WordGeometry {
     val wordGeometry = buildGeometryRange(
         layout = layout,
-        word = word,
         wordOffset = wordOffset,
         range = LocalTextRange(0, word.text.length),
-        positionMs = positionMs,
-        fadeWidthPx = fadeWidthPx,
     )
+    val mask = wordGeometry.bounds?.let { bounds ->
+        resolveWordMaskGradientPx(
+            wordLeftPx = bounds.left,
+            wordWidthPx = bounds.width,
+            wordHeightPx = bounds.height,
+            startTimeMs = word.startTimeMs,
+            endTimeMs = word.endTimeMs,
+            positionMs = positionMs,
+            fadeWidthFactor = fadeWidthFactor,
+        )
+    }
 
     val characters = graphemeRanges(word.text).mapNotNull { range ->
         val geometry = buildGeometryRange(
             layout = layout,
-            word = word,
             wordOffset = wordOffset,
             range = range,
-            positionMs = positionMs,
-            fadeWidthPx = fadeWidthPx,
         )
         val bounds = geometry.bounds ?: return@mapNotNull null
         CharacterGeometry(
             full = geometry.full,
-            solid = geometry.solid,
-            midFade = geometry.midFade,
-            edgeFade = geometry.edgeFade,
             bounds = bounds,
         )
     }
 
     return WordGeometry(
         full = wordGeometry.full,
-        solid = wordGeometry.solid,
-        midFade = wordGeometry.midFade,
-        edgeFade = wordGeometry.edgeFade,
         bounds = wordGeometry.bounds,
+        mask = mask,
         characters = characters,
     )
 }
 
 private data class RangeGeometry(
     val full: Path,
-    val solid: Path,
-    val midFade: Path,
-    val edgeFade: Path,
     val bounds: Rect?,
 )
 
 private fun buildGeometryRange(
     layout: TextLayoutResult,
-    word: LyricWord,
     wordOffset: Int,
     range: LocalTextRange,
-    positionMs: Long,
-    fadeWidthPx: Float,
 ): RangeGeometry {
     val full = Path()
-    val solid = Path()
-    val midFade = Path()
-    val edgeFade = Path()
-    val wordText = word.text
-    val progress = word.progressAt(positionMs)
 
     var minLeft = Float.POSITIVE_INFINITY
     var minTop = Float.POSITIVE_INFINITY
     var maxRight = Float.NEGATIVE_INFINITY
     var maxBottom = Float.NEGATIVE_INFINITY
 
-    if (wordText.isEmpty() || range.start >= range.endExclusive) {
-        return RangeGeometry(full, solid, midFade, edgeFade, null)
+    if (range.start >= range.endExclusive) {
+        return RangeGeometry(full, null)
     }
 
     for (localIndex in range.start until range.endExclusive) {
@@ -471,32 +465,6 @@ private fun buildGeometryRange(
         minTop = min(minTop, box.top)
         maxRight = max(maxRight, box.right)
         maxBottom = max(maxBottom, box.bottom)
-
-        val charStart = localIndex.toFloat() / wordText.length
-        val charEnd = (localIndex + 1).toFloat() / wordText.length
-        if (progress <= charStart) continue
-
-        val charProgress = ((progress - charStart) / (charEnd - charStart)).coerceIn(0f, 1f)
-        if (charProgress >= 0.999f) {
-            solid.addRect(box)
-            continue
-        }
-        if (charProgress <= 0f) continue
-
-        val highlightedRight = box.left + box.width * charProgress
-        val fadeWidth = min(fadeWidthPx, highlightedRight - box.left).coerceAtLeast(0f)
-        val fadeStart = highlightedRight - fadeWidth
-        val fadeMid = fadeStart + fadeWidth * 0.58f
-
-        if (fadeStart > box.left) {
-            solid.addRect(Rect(box.left, box.top, fadeStart, box.bottom))
-        }
-        if (fadeMid > fadeStart) {
-            midFade.addRect(Rect(fadeStart, box.top, fadeMid, box.bottom))
-        }
-        if (highlightedRight > fadeMid) {
-            edgeFade.addRect(Rect(fadeMid, box.top, highlightedRight, box.bottom))
-        }
     }
 
     val bounds = if (minLeft.isFinite()) {
@@ -504,7 +472,7 @@ private fun buildGeometryRange(
     } else {
         null
     }
-    return RangeGeometry(full, solid, midFade, edgeFade, bounds)
+    return RangeGeometry(full, bounds)
 }
 
 private fun graphemeRanges(text: String): List<LocalTextRange> {
