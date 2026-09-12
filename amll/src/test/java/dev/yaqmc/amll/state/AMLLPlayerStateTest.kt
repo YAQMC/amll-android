@@ -3,6 +3,8 @@ package dev.yaqmc.amll.state
 import dev.yaqmc.amll.model.LyricLine
 import dev.yaqmc.amll.model.LyricWord
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AMLLPlayerStateTest {
@@ -32,5 +34,21 @@ class AMLLPlayerStateTest {
         assertEquals(0, findActiveLineIndex(withBackground, 1500))
         assertEquals(0, findActiveLineIndex(withBackground, 2500))
         assertEquals(2, findActiveLineIndex(withBackground, 3200))
+    }
+
+    @Test fun playbackStateDefaultsToPlayingForBootstrapCompatibility() {
+        val state = AMLLPlayerState(lines)
+        assertTrue(state.isPlaying)
+    }
+
+    @Test fun playbackStateCanBeDrivenByHostPlayer() {
+        val state = AMLLPlayerState(lines, initialIsPlaying = false)
+        assertFalse(state.isPlaying)
+
+        state.setPlaying(true)
+        assertTrue(state.isPlaying)
+
+        state.setPlaying(false)
+        assertFalse(state.isPlaying)
     }
 }
