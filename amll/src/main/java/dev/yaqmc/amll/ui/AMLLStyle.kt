@@ -10,8 +10,9 @@ import androidx.compose.ui.unit.sp
 
 @Immutable
 data class AMLLStyle(
+    // AMLL gradient-mask endpoints: bright=1.0 and dark=0.4. SOLID derives the same RGB at 0.2.
     val activeColor: Color = Color.White,
-    val inactiveColor: Color = Color.White.copy(alpha = 0.38f),
+    val inactiveColor: Color = Color.White.copy(alpha = AMLL_GRADIENT_DARK_MASK_ALPHA),
     // Upstream .lyricSubLine stays at 0.3 opacity; group opacity is applied separately.
     val secondaryActiveColor: Color = Color.White.copy(alpha = 0.30f),
     val secondaryInactiveColor: Color = Color.White.copy(alpha = 0.30f),
