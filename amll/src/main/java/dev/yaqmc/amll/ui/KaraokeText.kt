@@ -43,26 +43,28 @@ internal fun KaraokeText(
 ) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
+    val renderPlan = remember(line.words) { chunkAndSplitLyricWords(line.words) }
+    val renderWords = renderPlan.words
     val annotationStyle = remember(style) {
         style.copy(
             fontSize = style.fontSize * 0.5f,
             lineHeight = style.fontSize * 0.5f,
         )
     }
-    val annotations = remember(line.words, annotationStyle, measurer) {
+    val annotations = remember(renderWords, annotationStyle, measurer) {
         measureWordAnnotations(
-            words = line.words,
+            words = renderWords,
             measurer = measurer,
             annotationStyle = annotationStyle,
         )
     }
-    val wordWidthsPx = remember(line.words, style, measurer) {
-        line.words.map { word ->
-            if (word.text.isEmpty()) {
+    val chunkWidthsPx = remember(renderPlan.chunks, style, measurer) {
+        renderPlan.chunks.map { chunk ->
+            if (chunk.text.isEmpty()) {
                 0f
             } else {
                 measurer.measure(
-                    text = word.text,
+                    text = chunk.text,
                     style = style,
                     softWrap = false,
                     maxLines = 1,
@@ -73,10 +75,10 @@ internal fun KaraokeText(
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val widthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
-        val balanced = remember(line.words, wordWidthsPx, widthPx) {
+        val balanced = remember(renderPlan, chunkWidthsPx, widthPx) {
             buildBalancedLyricLayout(
-                wordTexts = line.words.map(LyricWord::text),
-                wordWidthsPx = wordWidthsPx,
+                plan = renderPlan,
+                chunkWidthsPx = chunkWidthsPx,
                 containerWidthPx = widthPx.toFloat(),
             )
         }
@@ -106,14 +108,14 @@ internal fun KaraokeText(
                 .fillMaxWidth()
                 .height(max(minimumHeight.value, totalHeight.value).dp)
         ) {
-            if (line.text.isEmpty()) {
+            if (renderWords.isEmpty() || balanced.text.isEmpty()) {
                 withTransform({ translate(top = baseOffsetY) }) {
                     drawText(layout, color = inactiveColor)
                 }
                 return@Canvas
             }
 
-            line.words.forEachIndexed { wordIndex, word ->
+            renderWords.forEachIndexed { wordIndex, word ->
                 val geometry = buildWordGeometry(
                     layout = layout,
                     word = word,
@@ -140,7 +142,7 @@ internal fun KaraokeText(
                             characterIndex = characterIndex,
                             totalCharacters = geometry.characters.size,
                             isBackground = line.isBackground,
-                            isLastWord = wordIndex == line.words.lastIndex,
+                            isLastWord = wordIndex == renderWords.lastIndex,
                         )
                         drawCharacter(
                             layout = layout,
