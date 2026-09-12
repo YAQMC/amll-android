@@ -3,12 +3,21 @@ package dev.yaqmc.amll.ui
 import dev.yaqmc.amll.model.LyricLine
 import dev.yaqmc.amll.model.LyricWord
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LyricLineGroupingTest {
-    private fun line(text: String, start: Long, background: Boolean = false) = LyricLine(
-        words = listOf(LyricWord(start, start + 1000, text)),
+    private fun line(
+        text: String,
+        wordStart: Long,
+        background: Boolean = false,
+        lineStart: Long = wordStart,
+    ) = LyricLine(
+        words = listOf(LyricWord(wordStart, wordStart + 1000, text)),
+        startTimeMs = lineStart,
+        endTimeMs = wordStart + 1000,
         isBackground = background,
     )
 
@@ -42,5 +51,29 @@ class LyricLineGroupingTest {
         assertEquals(2, groups.size)
         assertEquals("bg1", groups[0].background?.text)
         assertEquals("bg2", groups[1].main.text)
+    }
+
+    @Test fun backgroundOrderUsesFirstWordTimingEvenWhenLineStartsAreSynchronized() {
+        val groups = groupLyricLines(
+            listOf(
+                line("main", wordStart = 1_200, lineStart = 900),
+                line("bg", wordStart = 900, background = true, lineStart = 900),
+            ),
+        )
+
+        val group = groups.single()
+        assertTrue(group.backgroundStartsFirst)
+        assertTrue(shouldPlaceBackgroundFirst(group, alwaysPostpositionBackground = false))
+    }
+
+    @Test fun alwaysPostpositionOverridesEarlierBackgroundVocal() {
+        val group = groupLyricLines(
+            listOf(
+                line("main", wordStart = 1_200, lineStart = 900),
+                line("bg", wordStart = 900, background = true, lineStart = 900),
+            ),
+        ).single()
+
+        assertFalse(shouldPlaceBackgroundFirst(group, alwaysPostpositionBackground = true))
     }
 }
