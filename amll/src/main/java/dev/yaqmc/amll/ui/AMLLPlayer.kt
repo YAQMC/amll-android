@@ -87,6 +87,7 @@ fun AMLLPlayer(
     val afterPadding = with(density) { afterPaddingPx.toDp() }
 
     val groups = remember(state.lyricLines) { groupLyricLines(state.lyricLines) }
+    val hasDuetLine = remember(groups) { groups.any { it.main.isDuet } }
     val interludes = remember(groups) { calculateInterludes(groups) }
     val listItems = remember(groups, interludes) { buildLyricListItems(groups, interludes) }
 
@@ -131,11 +132,6 @@ fun AMLLPlayer(
     var lastManualInput by remember { mutableStateOf<ManualScrollInputType?>(null) }
     var manualInteractionEpoch by remember { mutableStateOf(0) }
 
-    /**
-     * Upstream starts the five-second auto-align timer only after physical scrolling is idle.
-     * Repeated wheel input and even a new touch while suspended restart this coroutine through the
-     * interaction epoch, matching ScrollInteractionEngine's timer interruption semantics.
-     */
     LaunchedEffect(
         autoAlignSuspended,
         manualInteractionEpoch,
@@ -188,8 +184,6 @@ fun AMLLPlayer(
             intervalMs = focusIntervalMs,
         )
 
-        // Wait until the size-derived edge padding has reached LazyListLayoutInfo so viewport/item
-        // coordinates are from the same layout pass after a resize or alignPosition change.
         if (listState.layoutInfo.beforeContentPadding != beforePaddingPx) {
             snapshotFlow { listState.layoutInfo.beforeContentPadding }
                 .filter { appliedPadding -> appliedPadding == beforePaddingPx }
@@ -211,9 +205,6 @@ fun AMLLPlayer(
         var visible = layoutInfo.visibleItemsInfo.firstOrNull { it.index == focusItemIndex }
 
         if (visible == null) {
-            // For an offscreen target we do not know its measured height yet. First place its top on
-            // the configured viewport-relative position; after it is composed, correct for the real
-            // Top/Center/Bottom anchor below with the same AMLL spring used for normal focus motion.
             val coarseOffsetFromStart = viewportHeightPx * style.alignPosition
             listState.animateScrollToItem(
                 index = focusItemIndex,
@@ -257,7 +248,6 @@ fun AMLLPlayer(
                     var hasTouch = false
 
                     while (true) {
-                        // Initial pass observes without consuming, leaving LazyColumn in charge of drag/fling.
                         val event = awaitPointerEvent(PointerEventPass.Initial)
 
                         if (
@@ -287,14 +277,12 @@ fun AMLLPlayer(
                             touchPointerDown = true
                             lastManualInput = ManualScrollInputType.Touch
                             touchIntent.onDown(justPressed.position.x, justPressed.position.y)
-                            // A touch interrupts an existing resume timer even if it becomes only a tap.
                             manualInteractionEpoch += 1
                         } else if (hasTouch && justPressed != null && pressedTouches.size > 1) {
                             val anchor = pressedTouches.first()
                             touchIntent.reanchor(anchor.position.x, anchor.position.y)
                         }
 
-                        // When the current anchor finger is lifted, re-anchor before evaluating motion.
                         if (hasTouch && justReleased && pressedTouches.isNotEmpty()) {
                             val anchor = pressedTouches.first()
                             touchIntent.reanchor(anchor.position.x, anchor.position.y)
@@ -404,6 +392,7 @@ fun AMLLPlayer(
                         isPlaying = state.isPlaying,
                         positionMs = state.positionMs,
                         style = style,
+                        hasDuetLine = hasDuetLine,
                         scale = scale,
                         alpha = alpha,
                         blurRadiusPx = blurRadiusPx,
@@ -422,6 +411,7 @@ private fun LyricGroup(
     isPlaying: Boolean,
     positionMs: Long,
     style: AMLLStyle,
+    hasDuetLine: Boolean,
     scale: Float,
     alpha: Float,
     blurRadiusPx: Float,
@@ -434,10 +424,21 @@ private fun LyricGroup(
         group = group,
         alwaysPostpositionBackground = style.alwaysPostpositionBackground,
     )
+    val density = LocalDensity.current
+    val lineLayout = with(density) {
+        resolveAMLLLineLayoutPx(style.lineFontSize.toPx())
+    }
+    val groupVerticalPadding = with(density) { lineLayout.groupVerticalPaddingPx.toDp() }
+    val subLineHeight = style.lineFontSize * AMLL_SUBLINE_LINE_HEIGHT_EM
 
     Column(
         modifier = Modifier
+            .amllSpeakerInset(
+                hasDuetLine = hasDuetLine,
+                isDuet = main.isDuet,
+            )
             .fillMaxWidth()
+            .padding(vertical = groupVerticalPadding)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -491,9 +492,9 @@ private fun LyricGroup(
         if (main.translatedLyric.isNotBlank()) {
             Text(
                 text = main.translatedLyric,
-                modifier = Modifier.padding(top = 4.dp),
                 color = if (active) style.secondaryActiveColor else style.secondaryInactiveColor,
                 fontSize = style.secondaryFontSize,
+                lineHeight = subLineHeight,
                 textAlign = mainTextAlign,
             )
         }
@@ -501,9 +502,9 @@ private fun LyricGroup(
         if (main.romanLyric.isNotBlank()) {
             Text(
                 text = main.romanLyric,
-                modifier = Modifier.padding(top = 2.dp),
                 color = if (active) style.secondaryActiveColor else style.secondaryInactiveColor,
                 fontSize = style.secondaryFontSize,
+                lineHeight = subLineHeight,
                 textAlign = mainTextAlign,
             )
         }
@@ -536,6 +537,11 @@ private fun BackgroundVocal(
     val textAlign = if (mainIsDuet) TextAlign.End else TextAlign.Start
     val hiddenDirection = if (placedFirst) 1f else -1f
     val visible = active || !isPlaying
+    val density = LocalDensity.current
+    val lineLayout = with(density) {
+        resolveAMLLLineLayoutPx(style.lineFontSize.toPx())
+    }
+    val groupContentGap = with(density) { lineLayout.groupContentGapPx.toDp() }
 
     AnimatedVisibility(
         visible = visible,
@@ -562,8 +568,8 @@ private fun BackgroundVocal(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
-                    top = if (placedFirst) 0.dp else 4.dp,
-                    bottom = if (placedFirst) 4.dp else 0.dp,
+                    top = if (placedFirst) 0.dp else groupContentGap,
+                    bottom = if (placedFirst) groupContentGap else 0.dp,
                 )
                 .graphicsLayer { alpha = style.backgroundAlpha },
             horizontalAlignment = alignment,

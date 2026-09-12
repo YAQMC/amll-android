@@ -11,10 +11,12 @@ import androidx.compose.ui.unit.sp
 data class AMLLStyle(
     val activeColor: Color = Color.White,
     val inactiveColor: Color = Color.White.copy(alpha = 0.38f),
-    val secondaryActiveColor: Color = Color.White.copy(alpha = 0.72f),
-    val secondaryInactiveColor: Color = Color.White.copy(alpha = 0.28f),
+    // Upstream .lyricSubLine stays at 0.3 opacity; inactive group opacity is applied separately.
+    val secondaryActiveColor: Color = Color.White.copy(alpha = 0.30f),
+    val secondaryInactiveColor: Color = Color.White.copy(alpha = 0.30f),
     val lineFontSize: TextUnit = 34.sp,
-    val secondaryFontSize: TextUnit = 16.sp,
+    // Upstream sub-lines are 0.5em of the base lyric font: 17sp for the native 34sp default.
+    val secondaryFontSize: TextUnit = 17.sp,
     // Upstream AMLL keeps the active main line at 100% and scales inactive main lines to 97%.
     val activeScale: Float = 1f,
     val inactiveScale: Float = 0.97f,
@@ -29,7 +31,10 @@ data class AMLLStyle(
     val backgroundSlide: Dp = 80.dp,
     // Mirrors AMLL's setAlwaysPostpositionBackground option.
     val alwaysPostpositionBackground: Boolean = false,
-    val lineSpacing: Dp = 18.dp,
+    // Additional spacing outside AMLL's measured group box. Upstream has no separate inter-group
+    // gap: its visual rhythm comes from the wrapper's 0.4em vertical padding, so the native default
+    // is zero while retaining this property for source-compatible custom spacing.
+    val lineSpacing: Dp = 0.dp,
     val horizontalPadding: Dp = 28.dp,
     val verticalPadding: Dp = 120.dp,
     // Legacy bootstrap option retained for source compatibility. v16 uses viewport-relative
