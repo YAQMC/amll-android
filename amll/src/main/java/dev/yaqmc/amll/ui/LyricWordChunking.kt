@@ -4,7 +4,7 @@ import dev.yaqmc.amll.model.LyricWord
 
 /**
  * One indivisible layout unit. Child words keep their own timings/motion/annotations; the chunk
- * only controls where the balanced line breaker is allowed to insert a newline.
+ * controls line breaking and the shared emphasize envelope used by upstream's wrapper animation.
  */
 internal data class RenderWordChunk(
     val words: List<LyricWord>,
@@ -17,12 +17,27 @@ internal data class RenderWordChunk(
     val startTimeMs: Long = words.minOf(LyricWord::startTimeMs)
     val endTimeMs: Long = words.maxOf(LyricWord::endTimeMs)
     val isSpace: Boolean = words.all { it.text.trim().isEmpty() }
+
+    /** Synthetic timing word equivalent to the merged word created by upstream `buildWord()`. */
+    val emphasisWord: LyricWord = LyricWord(
+        startTimeMs = startTimeMs,
+        endTimeMs = endTimeMs,
+        text = text,
+    )
+
+    /**
+     * Upstream emphasizes a chunk when any child qualifies, or when the merged non-CJK chunk
+     * qualifies. This is what lets short syllable fragments combine into one long-word pulse.
+     */
+    val shouldEmphasize: Boolean =
+        words.any(::shouldEmphasize) || (!isCjkText(text) && shouldEmphasize(emphasisWord))
 }
 
 internal data class RenderWordPlan(
     val chunks: List<RenderWordChunk>,
 ) {
     val words: List<LyricWord> = chunks.flatMap(RenderWordChunk::words)
+    val lastContentChunkIndex: Int = chunks.indexOfLast { !it.isSpace }
 }
 
 /**
