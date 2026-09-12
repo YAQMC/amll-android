@@ -324,19 +324,7 @@ fun AMLLPlayer(
                     val groupIndex = item.groupIndex
                     val group = item.group
                     val active = activeInterlude == null && groupIndex == activeGroupIndex
-                    val referenceGroupIndex = when {
-                        activeInterlude != null && activeInterlude.anchorGroupIndex >= 0 -> {
-                            activeInterlude.anchorGroupIndex
-                        }
-                        activeGroupIndex >= 0 -> activeGroupIndex
-                        else -> 0
-                    }
-                    val distance = abs(groupIndex - referenceGroupIndex)
-                    val targetAlpha = if (active) {
-                        style.activeAlpha
-                    } else {
-                        inactiveAlphaForDistance(distance, style)
-                    }
+                    val targetAlpha = if (active) style.activeAlpha else style.inactiveAlpha
 
                     val blurScrollToIndex = when {
                         activeInterlude != null -> {
@@ -360,11 +348,7 @@ fun AMLLPlayer(
                         enabled = style.enableBlur,
                     )
 
-                    val alpha by animateFloatAsState(
-                        targetValue = targetAlpha,
-                        animationSpec = spring(stiffness = 310f, dampingRatio = 0.88f),
-                        label = "amll-line-alpha",
-                    )
+                    val alpha by animateLyricGroupOpacity(targetAlpha)
 
                     LyricGroup(
                         group = group,
@@ -521,10 +505,4 @@ private fun LyricGroup(
             )
         }
     }
-}
-
-private fun inactiveAlphaForDistance(distance: Int, style: AMLLStyle): Float {
-    if (distance <= 1) return style.inactiveAlpha
-    val t = ((distance - 1) / 3f).coerceIn(0f, 1f)
-    return style.inactiveAlpha + (style.farInactiveAlpha - style.inactiveAlpha) * t
 }
