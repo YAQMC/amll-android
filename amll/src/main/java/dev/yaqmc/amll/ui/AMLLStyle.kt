@@ -33,4 +33,6 @@ data class AMLLStyle(
     val focusOffset: Dp = 112.dp,
     // AMLL documents 1em as the Android-like word-mask fade width (0.5em for iPad-like rendering).
     val wordFadeWidthEm: Float = 1f,
+    // Upstream waits five seconds after manual scrolling + inertia becomes idle before resuming auto-align.
+    val autoAlignResumeDelayMs: Long = 5_000L,
 )

@@ -10,6 +10,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,7 +24,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
@@ -36,6 +40,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.yaqmc.amll.model.LyricLine
 import dev.yaqmc.amll.state.AMLLPlayerState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 
 @Composable
@@ -53,7 +60,37 @@ fun AMLLPlayer(
         groups.indexOfFirst { it.mainIndex == activeLineIndex }
     }
 
-    LaunchedEffect(activeGroupIndex, groups.size, style.focusOffset) {
+    val isUserDragging by listState.interactionSource.collectIsDraggedAsState()
+    var autoAlignSuspended by remember { mutableStateOf(false) }
+
+    // Match AMLL's interaction model: once the user takes control of the lyric list, automatic
+    // focus movement is suspended. Compose owns the actual fling physics; the five-second resume
+    // timer begins only after both the finger drag and native inertia have fully stopped.
+    LaunchedEffect(isUserDragging, style.autoAlignResumeDelayMs) {
+        if (isUserDragging) {
+            autoAlignSuspended = true
+            return@LaunchedEffect
+        }
+        if (!autoAlignSuspended) return@LaunchedEffect
+
+        snapshotFlow { listState.isScrollInProgress }
+            .filter { scrolling -> !scrolling }
+            .first()
+
+        delay(style.autoAlignResumeDelayMs.coerceAtLeast(0L))
+
+        if (!isUserDragging && !listState.isScrollInProgress) {
+            autoAlignSuspended = false
+        }
+    }
+
+    LaunchedEffect(
+        activeGroupIndex,
+        groups.size,
+        style.focusOffset,
+        autoAlignSuspended,
+    ) {
+        if (autoAlignSuspended) return@LaunchedEffect
         if (activeGroupIndex !in groups.indices) return@LaunchedEffect
 
         val focusOffsetPx = with(density) { style.focusOffset.roundToPx() }
