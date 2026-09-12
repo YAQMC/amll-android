@@ -45,10 +45,10 @@ class AMLLPlayerStateTest {
         val state = AMLLPlayerState(lines, initialIsPlaying = false)
         assertFalse(state.isPlaying)
 
-        state.setPlaying(true)
+        state.updatePlaybackState(true)
         assertTrue(state.isPlaying)
 
-        state.setPlaying(false)
+        state.updatePlaybackState(false)
         assertFalse(state.isPlaying)
     }
 }
