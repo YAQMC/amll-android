@@ -43,7 +43,6 @@ internal fun KaraokeText(
 ) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val text = line.text.ifEmpty { " " }
     val annotationStyle = remember(style) {
         style.copy(
             fontSize = style.fontSize * 0.5f,
@@ -57,13 +56,37 @@ internal fun KaraokeText(
             annotationStyle = annotationStyle,
         )
     }
+    val wordWidthsPx = remember(line.words, style, measurer) {
+        line.words.map { word ->
+            if (word.text.isEmpty()) {
+                0f
+            } else {
+                measurer.measure(
+                    text = word.text,
+                    style = style,
+                    softWrap = false,
+                    maxLines = 1,
+                ).size.width.toFloat()
+            }
+        }
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val widthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
+        val balanced = remember(line.words, wordWidthsPx, widthPx) {
+            buildBalancedLyricLayout(
+                wordTexts = line.words.map(LyricWord::text),
+                wordWidthsPx = wordWidthsPx,
+                containerWidthPx = widthPx.toFloat(),
+            )
+        }
+        val text = balanced.text.ifEmpty { " " }
         val layout = remember(text, style, widthPx, measurer) {
             measurer.measure(
                 text = text,
                 style = style,
+                softWrap = false,
+                maxLines = Int.MAX_VALUE,
                 constraints = Constraints(maxWidth = widthPx),
             )
         }
@@ -90,16 +113,14 @@ internal fun KaraokeText(
                 return@Canvas
             }
 
-            var textOffset = 0
             line.words.forEachIndexed { wordIndex, word ->
                 val geometry = buildWordGeometry(
                     layout = layout,
                     word = word,
-                    wordOffset = textOffset,
+                    wordOffset = balanced.wordOffsets.getOrElse(wordIndex) { 0 },
                     positionMs = positionMs,
                     fadeWidthPx = fadeWidthPx,
                 )
-                textOffset += word.text.length
 
                 val wordMotion = if (active) {
                     wordMotionAt(
@@ -224,9 +245,6 @@ private fun DrawScope.drawCharacter(
         (wordMotion.translateYEm + characterMotion.translateYEm) * fontSizePx
     val pivot = geometry.bounds.center
 
-    // Text-shadow is not available as a first-class Compose TextLayout draw effect on Android 8.
-    // A compact five-sample halo keeps the same AMLL glow timing/radius while avoiding API-31-only
-    // RenderEffect. Only emphasized graphemes pay this overdraw cost.
     if (characterMotion.glowAlpha > 0.001f && characterMotion.glowRadiusEm > 0f) {
         val radiusPx = characterMotion.glowRadiusEm * fontSizePx * 0.22f
         val haloAlpha = activeColor.alpha * characterMotion.glowAlpha
@@ -289,10 +307,6 @@ private fun DrawScope.drawHighlight(
     }
 }
 
-/**
- * Builds the word clip, karaoke bands and per-grapheme clips from one shared TextLayoutResult.
- * Emphasized graphemes can then move independently without changing Compose text layout.
- */
 private fun buildWordGeometry(
     layout: TextLayoutResult,
     word: LyricWord,
@@ -416,11 +430,6 @@ private fun buildGeometryRange(
     return RangeGeometry(full, solid, midFade, edgeFade, bounds)
 }
 
-/**
- * Mirrors upstream's `Intl.Segmenter(..., grapheme)` split closely enough on Android/JVM while
- * preserving UTF-16 offsets required by TextLayoutResult. Leading/trailing whitespace is excluded
- * because AMLL applies emphasis to `displayWord.trim()`.
- */
 private fun graphemeRanges(text: String): List<LocalTextRange> {
     if (text.isEmpty()) return emptyList()
 
