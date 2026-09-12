@@ -10,10 +10,26 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 - Word-level karaoke timing
 - Translation and romanization
 - Duet/right-aligned lines
-- Background-vocal line model
-- Animated focus, scale, alpha and automatic scrolling
+- Background-vocal grouping and slide-in behavior
+- AMLL-like spring focus, line scale and opacity transitions
+- Android-like soft word-mask leading edge
 - Android 8.0+ (`minSdk 26`), matching YAQMC's Android floor
 - API shaped so YAQMC can adapt its existing parsed lyric data directly
+
+## Current replication status
+
+The first AMLL-motion pass now mirrors several upstream behaviors instead of using generic Compose defaults:
+
+- active main line scale: `1.0`
+- inactive main line scale: `0.97`
+- background lyric size: approximately `0.7em`
+- background lyric opacity: approximately `0.4`
+- background vocals are grouped with the previous primary line rather than becoming a separate scroll target
+- background vocals spring in from an approximately `-80dp` vertical offset
+- focus scrolling uses a spring when the target item is already visible
+- word highlighting uses a soft three-band leading edge; the default fade width is tuned for the Android-like `1em` AMLL setting
+
+This is still an early renderer. Blur, emphasized long-word glow/scale, interlude dots, manual-scroll suspension and exact line layout parity remain future work.
 
 ## Non-goals for the first milestone
 

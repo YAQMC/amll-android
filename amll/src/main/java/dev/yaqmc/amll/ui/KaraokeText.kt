@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.yaqmc.amll.model.LyricLine
 import kotlin.math.max
+import kotlin.math.min
 
 @Composable
 internal fun KaraokeText(
@@ -32,6 +33,7 @@ internal fun KaraokeText(
     inactiveColor: Color,
     modifier: Modifier = Modifier,
     minimumHeight: Dp = 48.dp,
+    fadeWidthEm: Float = 1f,
 ) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -47,6 +49,9 @@ internal fun KaraokeText(
             )
         }
         val height = with(density) { layout.size.height.toDp() }
+        val fadeWidthPx = with(density) {
+            style.fontSize.toPx() * fadeWidthEm.coerceAtLeast(0.0001f)
+        }
 
         Canvas(
             modifier = Modifier
@@ -56,20 +61,41 @@ internal fun KaraokeText(
             drawText(layout, color = inactiveColor)
             if (!active || line.text.isEmpty()) return@Canvas
 
-            val highlightPath = buildHighlightPath(layout, line, positionMs)
-            clipPath(highlightPath) {
+            val highlight = buildHighlightPaths(layout, line, positionMs, fadeWidthPx)
+
+            clipPath(highlight.solid) {
                 drawText(layout, color = activeColor)
+            }
+            clipPath(highlight.midFade) {
+                drawText(layout, color = activeColor.copy(alpha = activeColor.alpha * 0.62f))
+            }
+            clipPath(highlight.edgeFade) {
+                drawText(layout, color = activeColor.copy(alpha = activeColor.alpha * 0.28f))
             }
         }
     }
 }
 
-private fun buildHighlightPath(
+private data class HighlightPaths(
+    val solid: Path,
+    val midFade: Path,
+    val edgeFade: Path,
+)
+
+/**
+ * Builds a three-band approximation of AMLL's soft karaoke mask. Completed glyphs are solid;
+ * the live leading edge is split into two progressively dimmer bands instead of ending on a
+ * hard rectangular boundary.
+ */
+private fun buildHighlightPaths(
     layout: TextLayoutResult,
     line: LyricLine,
     positionMs: Long,
-): Path {
-    val path = Path()
+    fadeWidthPx: Float,
+): HighlightPaths {
+    val solid = Path()
+    val midFade = Path()
+    val edgeFade = Path()
     var offset = 0
 
     line.words.forEach { word ->
@@ -87,19 +113,29 @@ private fun buildHighlightPath(
 
             val box = layout.getBoundingBox(globalIndex)
             val charProgress = ((progress - charStart) / (charEnd - charStart)).coerceIn(0f, 1f)
+            if (charProgress >= 0.999f) {
+                solid.addRect(box)
+                continue
+            }
             if (charProgress <= 0f) continue
 
-            path.addRect(
-                Rect(
-                    left = box.left,
-                    top = box.top,
-                    right = box.left + box.width * charProgress,
-                    bottom = box.bottom,
-                )
-            )
+            val highlightedRight = box.left + box.width * charProgress
+            val fadeWidth = min(fadeWidthPx, highlightedRight - box.left).coerceAtLeast(0f)
+            val fadeStart = highlightedRight - fadeWidth
+            val fadeMid = fadeStart + fadeWidth * 0.58f
+
+            if (fadeStart > box.left) {
+                solid.addRect(Rect(box.left, box.top, fadeStart, box.bottom))
+            }
+            if (fadeMid > fadeStart) {
+                midFade.addRect(Rect(fadeStart, box.top, fadeMid, box.bottom))
+            }
+            if (highlightedRight > fadeMid) {
+                edgeFade.addRect(Rect(fadeMid, box.top, highlightedRight, box.bottom))
+            }
         }
         offset += wordText.length
     }
 
-    return path
+    return HighlightPaths(solid, midFade, edgeFade)
 }

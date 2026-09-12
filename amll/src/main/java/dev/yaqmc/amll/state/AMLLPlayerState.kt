@@ -12,17 +12,21 @@ class AMLLPlayerState(
     lyricLines: List<LyricLine> = emptyList(),
     initialPositionMs: Long = 0L,
 ) {
-    var lyricLines: List<LyricLine> by mutableStateOf(lyricLines.sortedBy(LyricLine::startTimeMs))
-        private set
+    private var _lyricLines: List<LyricLine> by mutableStateOf(
+        lyricLines.sortedBy(LyricLine::startTimeMs)
+    )
+
+    val lyricLines: List<LyricLine>
+        get() = _lyricLines
 
     var positionMs: Long by mutableLongStateOf(initialPositionMs.coerceAtLeast(0L))
         private set
 
     val activeLineIndex: Int
-        get() = findActiveLineIndex(lyricLines, positionMs)
+        get() = findActiveLineIndex(_lyricLines, positionMs)
 
     fun setLyricLines(lines: List<LyricLine>) {
-        lyricLines = lines.sortedBy(LyricLine::startTimeMs)
+        _lyricLines = lines.sortedBy(LyricLine::startTimeMs)
     }
 
     fun seekTo(positionMs: Long) {
