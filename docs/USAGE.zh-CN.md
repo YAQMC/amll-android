@@ -285,6 +285,8 @@ val lyricStyle = AMLLStyle(
     activeColor = Color.White,
     lyricFontWeight = FontWeight.SemiBold,
     enableBlur = true,
+    enableScale = true,
+    hidePassedLines = false,
     wordFadeWidthEm = 1f,
     alignPosition = 0.35f,
     alignAnchor = AMLLAlignAnchor.Center,
@@ -308,12 +310,15 @@ AMLLPlayer(
 | `backgroundLineScale` | 背景歌词字号比例 | `0.70` |
 | `alwaysPostpositionBackground` | 背景人声是否强制后置 | `false` |
 | `enableBlur` | 距离模糊 | `true` |
-| `wordFadeWidthEm` | 逐词高亮软边宽度 | `1em`，Android-like |
+| `enableScale` | 是否启用主歌词 inactive 97% 缩放 | `true`；不影响背景歌词独立的 75% scale |
+| `hidePassedLines` | 播放时隐藏已经越过焦点边界的歌词 | `false`；暂停时旧行会恢复 |
+| `wordFadeWidthEm` | 连续逐词 bright→dark gradient 的过渡宽度 | `1em`，Android-like |
+| `horizontalPadding` | 歌词 wrapper 左右留白 | 默认响应式：容器宽度 `<=500dp` 为 `20dp`，否则 `1em`；显式 Dp 为固定覆盖 |
 | `alignPosition` | 焦点位于 viewport 高度的比例 | `0.35` |
 | `alignAnchor` | 焦点对齐目标行的 Top/Center/Bottom | `Center` |
 | `autoAlignResumeDelayMs` | 手动滚动结束后恢复跟随的延迟 | `5000 ms` |
 
-`horizontalPadding`、`verticalPadding`、`lineSpacing` 等也可以覆盖，但如果目标是 AMLL parity，优先保留默认值。
+`verticalPadding`、`lineSpacing` 等也可以覆盖，但如果目标是 AMLL parity，优先保留默认值。
 
 ## 8. 完整 Compose 接入模板
 
@@ -360,14 +365,16 @@ fun NativeFullScreenLyrics(
 - 如果宿主只能低频提供 position，renderer 仍可工作，但逐词运动和 seek 判定精度会随采样精度下降。
 - API 31+ 使用原生 blur effect；Android 8-11 会保留其它视觉层级而不强行使用不可用的 Gaussian RenderEffect。
 - 手动触摸/滚轮滚动会暂停 auto-align；滚动与惯性停止后默认再等待 5 秒恢复。
+- `horizontalPadding = Dp.Unspecified` 是默认值，表示使用 AMLL 的响应式 20dp/1em 规则；只有确实需要固定边距时再显式传 Dp。
 
 ## 10. 当前边界
 
 当前重点是 AMLL 动态逐词歌词的 Android-native parity。仍在继续收敛的部分包括：
 
-- soft word-mask leading edge 从分段近似升级到与 upstream 完全一致的连续 gradient；
 - CSS text-shadow/glow 的像素级一致性；
+- ruby/逐词 roman annotation 的 mask/DOM 几何还存在少量实现差异；
 - bottom-line / end-of-song focus，需要宿主提供可靠 duration/end signal；
+- 部分上游配置开关（例如 auto seek detection / spring fallback）尚未全部暴露；
 - 更多针对实际 YAQMC 大型歌词数据的性能压测。
 
 这些不会改变上面的核心接入方式；后续 parity 更新应尽量保持 `LyricLine -> AMLLPlayerState -> AMLLPlayer` 这一层 API 稳定。
