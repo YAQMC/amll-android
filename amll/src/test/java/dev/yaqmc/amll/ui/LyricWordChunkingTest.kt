@@ -111,6 +111,20 @@ class LyricWordChunkingTest {
         assertTrue(chunk.emphasized)
     }
 
+    @Test fun rubySegmentsAreCarriedIntoSyntheticEmphasisWord() {
+        val ruby = listOf(
+            LyricRuby(0, 500, "あい"),
+            LyricRuby(500, 1000, "じょう"),
+        )
+        val plan = chunkAndSplitLyricWords(
+            listOf(word("愛情", 0, 1000, ruby = ruby))
+        )
+        val chunk = plan.chunks.single()
+
+        assertEquals(5, chunk.rubyCharacterCount)
+        assertEquals(ruby, chunk.emphasisWord.ruby)
+    }
+
     @Test fun trailingWhitespaceDoesNotBecomeLastEmphasizedChunk() {
         val plan = chunkAndSplitLyricWords(
             listOf(word("hello ", 0, 1000))

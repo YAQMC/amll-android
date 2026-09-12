@@ -1,5 +1,6 @@
 package dev.yaqmc.amll.ui
 
+import dev.yaqmc.amll.model.LyricRuby
 import dev.yaqmc.amll.model.LyricWord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -59,4 +60,34 @@ class WordMotionTest {
         assertTrue(finalPeak.glowAlpha > ordinaryPeak.glowAlpha)
         assertTrue(finalPeak.glowRadiusEm > ordinaryPeak.glowRadiusEm)
     }
+
+    @Test fun rubyCharacterCountControlsStaggerButNotPushGeometry() {
+        val withoutRuby = LyricWord(0, 2_000, "愛情")
+        val withRuby = LyricWord(
+            0,
+            2_000,
+            "愛情",
+            ruby = listOf(
+                LyricRuby(0, 1_000, "あい"),
+                LyricRuby(1_000, 2_000, "じょう"),
+            ),
+        )
+
+        val plainSecond = characterMotionAt(withoutRuby, 800, 1, 2, false, false)
+        val rubySecond = characterMotionAt(withRuby, 800, 1, 2, false, false)
+
+        // Ruby has five UTF-16 code units, so the second base glyph starts its pulse earlier than
+        // with the two-base-character denominator used when ruby is absent.
+        assertTrue(rubySecond.scale > plainSecond.scale)
+        assertTrue(rubySecond.glowAlpha > plainSecond.glowAlpha)
+        // Horizontal push still depends on the two visible base characters, exactly like upstream.
+        assertEquals(plainSecond.translateXEm.sign, rubySecond.translateXEm.sign, 0f)
+    }
+
+    private val Float.sign: Float
+        get() = when {
+            this > 0f -> 1f
+            this < 0f -> -1f
+            else -> 0f
+        }
 }

@@ -18,11 +18,21 @@ internal data class RenderWordChunk(
     val endTimeMs: Long = words.maxOf(LyricWord::endTimeMs)
     val isSpace: Boolean = words.all { it.text.trim().isEmpty() }
 
-    /** Synthetic timing word equivalent to the merged word created by upstream `buildWord()`. */
+    /** Upstream counts JS string length, i.e. UTF-16 code units, across all ruby segments. */
+    val rubyCharacterCount: Int = words.sumOf { word ->
+        word.ruby.sumOf { ruby -> ruby.text.length }
+    }
+
+    /**
+     * Synthetic timing word equivalent to the merged word created by upstream `buildWord()`.
+     * Carry merged ruby solely so `characterMotionAt()` can reproduce upstream's ruby-based stagger
+     * denominator without adding a separate renderer-side parameter.
+     */
     val emphasisWord: LyricWord = LyricWord(
         startTimeMs = startTimeMs,
         endTimeMs = endTimeMs,
         text = text,
+        ruby = words.flatMap(LyricWord::ruby),
     )
 
     /**
