@@ -25,12 +25,18 @@ data class AMLLStyle(
     // Upstream AMLL keeps the active main line at 100% and scales inactive main lines to 97%.
     val activeScale: Float = 1f,
     val inactiveScale: Float = 0.97f,
+    // Mirrors setEnableScale(). Disabling scale only affects the main-line 97% treatment; AMLL's
+    // background-vocal 75% inactive transform is a separate effect and remains enabled.
+    val enableScale: Boolean = true,
     // Dynamic AMLL group-opacity targets: highlighted groups are 0.85, ordinary rows stay at 1.0.
     val activeAlpha: Float = AMLL_HIGHLIGHTED_GROUP_ALPHA,
     val inactiveAlpha: Float = AMLL_DYNAMIC_GROUP_ALPHA,
     // Legacy bootstrap field kept for source compatibility. Upstream does not distance-fade dynamic
     // lyric opacity; v21 therefore no longer uses a separate far-row target.
     val farInactiveAlpha: Float = AMLL_DYNAMIC_GROUP_ALPHA,
+    // Mirrors setHidePassedLines(). Passed rows are nearly transparent only while playback is active;
+    // pausing restores them, matching upstream behavior.
+    val hidePassedLines: Boolean = false,
     // Upstream background vocals render at ~0.7em. Their lyric-line transform additionally
     // scales inactive playing rows to 75%, independently from the wrapper's 0.8 slide scale.
     val backgroundLineScale: Float = 0.70f,

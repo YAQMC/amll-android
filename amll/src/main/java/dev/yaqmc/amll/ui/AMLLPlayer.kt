@@ -102,6 +102,10 @@ fun AMLLPlayer(
         groups.indexOfFirst { it.mainIndex == activeLineIndex }
     }
     val activeInterlude = activeInterludeAt(interludes, state.positionMs)
+    val passedBoundary = resolvePassedBoundary(
+        activeGroupIndex = activeGroupIndex,
+        interludeAnchorGroupIndex = activeInterlude?.anchorGroupIndex,
+    )
     val focusItemIndex = lyricFocusItemIndex(
         items = listItems,
         activeGroupIndex = activeGroupIndex,
@@ -344,7 +348,16 @@ fun AMLLPlayer(
                     val groupIndex = item.groupIndex
                     val group = item.group
                     val active = activeInterlude == null && groupIndex == activeGroupIndex
-                    val targetAlpha = if (active) style.activeAlpha else style.inactiveAlpha
+                    val isPassed = groupIndex < passedBoundary
+                    val targetAlpha = if (
+                        style.hidePassedLines && state.isPlaying && isPassed
+                    ) {
+                        AMLL_HIDDEN_PASSED_GROUP_ALPHA
+                    } else if (active) {
+                        style.activeAlpha
+                    } else {
+                        style.inactiveAlpha
+                    }
 
                     val blurScrollToIndex = when {
                         activeInterlude != null -> {
@@ -416,7 +429,13 @@ private fun LyricGroup(
     val subLineHeight = style.lineFontSize * AMLL_SUBLINE_LINE_HEIGHT_EM
     val mainScaleSpec = mainLineScaleSpringSpec()
     val mainScale by animateFloatAsState(
-        targetValue = if (active || !isPlaying) style.activeScale else style.inactiveScale,
+        targetValue = resolveMainLineScaleTarget(
+            isActive = active,
+            isPlaying = isPlaying,
+            enableScale = style.enableScale,
+            activeScale = style.activeScale,
+            inactiveScale = style.inactiveScale,
+        ),
         animationSpec = spring(
             stiffness = mainScaleSpec.stiffness,
             dampingRatio = mainScaleSpec.dampingRatio,
