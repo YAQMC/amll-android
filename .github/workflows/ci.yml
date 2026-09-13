@@ -28,3 +28,5 @@ jobs:
           :demo:assembleDebug
       - name: Compile published artifact as YAQMC-style consumer
         run: gradle -p integration/consumer-smoke assembleDebug
+      - name: Compile published artifact from plain Android View host
+        run: gradle -p integration/view-consumer-smoke assembleDebug
