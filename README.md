@@ -2,87 +2,41 @@
 
 Android-native Apple Music-like lyric renderer for YAQMC.
 
-> Early native implementation. The goal is to provide an Android-native replacement for the web/DOM lyric rendering path used by AppleMusic-like-lyrics-style players. It does **not** embed a WebView and it has no DOM/PixiJS dependency.
+> Native Android implementation of the AppleMusic-like-lyrics rendering model. It does **not** embed a WebView and has no DOM/PixiJS dependency. The renderer itself is Jetpack Compose, while `AMLLPlayerView` lets an ordinary Android View/Capacitor host mount it without becoming a Compose-first application.
 
 ## Goals
 
-- Native Jetpack Compose rendering
-- Word-level karaoke timing
-- Translation, per-word romanization and ruby annotations
-- Duet/right-aligned lines
-- Background-vocal grouping and slide-in behavior
-- AMLL-like spring focus, line scale, opacity and distance blur transitions
-- Android-like soft word-mask leading edge
-- Media-time-derived word float and long-word emphasis motion
-- Per-grapheme AMLL emphasis stagger, push, lift and glow
-- Manual-scroll auto-align suspension and delayed spring return
-- AMLL interlude detection and animated focusable dots
-- Viewport-relative focus anchoring compatible with AMLL's layout model
-- Android 8.0+ (`minSdk 26`), matching YAQMC's Android floor
-- API shaped so YAQMC can adapt its existing parsed lyric data directly
+- Android 8.0+ (`minSdk 26`)
+- word-level karaoke timing and continuous AMLL-style masks
+- translation, per-word romanization and timed ruby annotations
+- duet/right-aligned lyrics and grouped background vocals
+- AMLL-style focus springs, scale, opacity, blur, interludes and manual-scroll behavior
+- deterministic media-time-derived animation across pause/seek/resume
+- stable host APIs for both Compose and traditional Android View applications
+- packaging suitable for direct YAQMC consumption
 
-## Current replication status
+## Current status
 
-The first thirty-one AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity, mask, responsive-wrapper, playback-control, end-of-song, emphasized-shadow and annotation-mask behavior instead of relying on generic Compose defaults:
+The first thirty-six implementation/integration passes now cover the major AMLL rendering and Android-host boundaries:
 
-- active/inactive main-line scale follows AMLL's `1.0 / 0.97` behavior using the upstream physical scale spring
-- `enableScale` mirrors upstream `setEnableScale()` and disables only the main-line 97% treatment; background-vocal 75% inactive scale remains independent
-- `enableSpring` mirrors upstream `setEnableSpring()`; disabling physical springs falls back to AMLL's 500ms CSS `ease` transform transition rather than snapping transforms
-- background lyrics stay grouped with their primary line rather than becoming independent scroll targets
-- background-vocal size/opacity, first-word ordering and always-postposition behavior follow AMLL's grouped presentation model
-- background-vocal wrapper motion is driven by the same dynamic vertical spring policy as AMLL's `bgSlideY`, including `+80 / -80 -> 0`, measured-height translation and `0.8 -> 1.0` wrapper scale
-- background-first vocals unfold their occupied measured height with the slide transform; post-positioned vocals keep AMLL's in-flow/out-of-flow visibility semantics
-- background lyric lines have their own independent `1.0 / 0.75` transform instead of inheriting the main line's `0.97` scale
-- word highlighting uses AMLL's continuous word-level bright-to-dark gradient with the Android-like `1em` fade-width default
-- gradient geometry uses measured word height for fade width and keeps AMLL's half-fade lead-in/tail around each timed word
-- AMLL SOLID/GRADIENT mask endpoints use the upstream alpha targets (`0.2`, `1.0`, `0.4`) and mode-specific `450ms / 300ms ease-out` transitions
-- dynamic group opacity follows upstream targets: highlighted groups use `0.85`, ordinary dynamic rows stay at `1.0`, with the DOM-style `0.4s ease` transition instead of distance fading
-- `hidePassedLines` follows AMLL's playing-only passed-boundary behavior and uses the same near-zero `1e-4` target; paused lyrics are restored
-- every word keeps AMLL's regular playback-time-derived upward float, including emphasized words
-- long-word emphasis uses AMLL's eligibility, duration mapping, two-half easing, final-word amplification and grapheme stagger
-- emphasized graphemes reproduce AMLL's horizontal push, vertical lift, scale and duration-derived glow envelope
-- emphasized grapheme glow uses a zero-offset native text shadow with the upstream white color, direct `emphasis * blur` alpha and direct `min(0.3, blur * 0.3)em` blur radius; the renderer no longer adds halo scaling or extra alpha/radius attenuation
-- the shadow is rendered per grapheme on Android 8+ without depending on API-31-only `RenderEffect`, while the existing karaoke bright/dark mask path remains unchanged
-- ruby annotations and per-word romanization participate in merged word layout and ruby character count drives AMLL emphasis stagger anchors
-- ruby, base glyphs and per-word romanization now sample one shared word-level bright-to-dark mask, matching upstream's `mainWordEl` mask ownership instead of using independent annotation progress clips
-- ruby segment timing drives the whole measured word-mask sweep using UTF-16 code-unit counts like JavaScript `string.length`; the sweep pauses across ruby timing gaps and clamps segment timing to the word bounds
-- annotation-aware mask geometry uses the full visual word-box width and stacked ruby + base + roman content height, with no native-only inter-band gap; roman text also preserves upstream's `0.3em` inline-end padding offset
-- annotation layout reserves explicit above-baseline space so ruby/romanized text does not distort main-word timing geometry
-- word/character motion is reconstructed directly from media time, so seeking is deterministic rather than free-running
-- ordinary playback-clock `update(...)` samples are distinct from explicit host `seekTo(...)` calls, so explicit seeks always use seek-motion semantics
-- automatic seek inference can be enabled/disabled on `AMLLPlayerState`; changing the flag resets the detector baseline while explicit seeks remain authoritative
-- playback seek inference ports AMLL's monotonic wall-clock detector, including jitter/drift tolerance and repeated equal-position samples while automatic detection is enabled
-- distance-based lyric blur is derived from focus distance; supported Android versions use native blur effects
-- lyric gaps become focusable AMLL-style interlude dot items with timed entrance/breathing/brightening/exit motion
-- touch scrolling only suspends auto-follow after AMLL's `> 10px` intent threshold; wheel input uses the upstream-style idle debounce
-- native Android drag/fling physics remain owned by `LazyColumn`; the five-second auto-align delay starts only after physical scrolling is actually idle
-- repeated touch input, tap interruptions and multi-touch re-anchoring restart the same suspension lifecycle without consuming native pointer events
-- focus scrolling uses AMLL's interval-adaptive vertical spring policy; seek/interlude motion switches to the slower upstream spring, or the shared 500ms transform fallback when springs are disabled
-- end-of-song is derived from the maximum main-line `endTime` across all lyric groups, matching upstream without requiring media duration/end callbacks from the host
-- end-of-song clears active lyric highlighting and switches focus motion to AMLL's medium end spring
-- an optional measured `bottomLine` Compose slot stays at the real end of the lyric list; at end-of-song it becomes the focus target, otherwise the final lyric group is focused
-- the bottom line follows AMLL's `0.20 -> 0.85` focus opacity hierarchy, approximately `0.7em` typography, inherited lyric weight and distance-blur behavior
-- automatic focus defaults to AMLL's viewport-relative `Center @ 0.35` alignment instead of a fixed dp offset
-- Top / Center / Bottom focus anchors are supported and use the target item's measured height like upstream layout
-- leading/trailing list space expands from the real composed viewport size so the first, last and optional bottom-line items can reach the configured focus anchor
-- lyric-group vertical rhythm comes from AMLL's measured `0.4em` wrapper padding and `0.3em` main/background gap rather than a fixed global dp gap
-- horizontal wrapper padding is responsive like upstream: `20dp` at <=500dp composed width, otherwise `1em`; hosts may explicitly override it
-- secondary lyric defaults follow AMLL's `0.5em` font, `0.75em` total line-height and 0.3 opacity hierarchy
-- songs containing duet lines measure each speaker at 85% content width on the correct side, so wrapping and group height follow AMLL's 15% opposite-speaker inset
-- lyric typography uses the react-full default weight 600 consistently across main, secondary and background content; active-state changes no longer alter glyph metrics or wrapping
-- CI builds the library/demo and runs native grouping, word-motion, text-shadow, annotation, interlude, interaction, spring, seek, focus-geometry, end-of-song, line-layout, background-motion, line-scale, opacity, continuous-mask, responsive-padding, behavior-flag, transform-policy and typography unit tests
+- main-line `1.0 / 0.97` scale, independent background `1.0 / 0.75` scale, `enableScale`, `enableSpring` and the 500ms non-spring fallback
+- grouped background vocals, first-word ordering, forced postposition, measured expansion and duet-side geometry
+- balanced lyric wrapping, AMLL word chunking, measured wrapper rhythm, responsive `20dp / 1em` horizontal padding and stable weight-600 typography
+- continuous bright-to-dark word masks with upstream SOLID/GRADIENT alpha targets and transition timings
+- per-word float, long-word emphasis, per-grapheme push/lift/scale and native zero-offset text shadow on Android 8+
+- ruby and per-word romanization participating in measured word boxes and sharing one parent word-level mask with the base glyphs
+- ruby-segment flex geometry, UTF-16 timing sweep and annotation-aware mask height/width
+- emphasized descendants moving underneath a mask that remains in parent-word space, matching upstream DOM mask ownership
+- touch/wheel manual-scroll suspension, delayed auto-align, viewport-relative focus anchors, adaptive focus springs and explicit/automatic seek semantics
+- interlude dots, end-of-song focus and optional measured `bottomLine`
+- `enableBlur`, `hidePassedLines`, `alwaysPostpositionBackground` and other commonly used upstream behavior flags
+- upstream-style obscene-word preprocessing through `Disabled`, `FullMask` and `PartialMask` modes while preserving timing/ruby/roman metadata
+- `AMLLPlayerView` for BridgeActivity/Fragment/Capacitor/legacy View hosts; the published AAR is smoke-tested from a consumer that does not apply the Compose compiler plugin
+- Maven publication tested through isolated consumers, plus credential-gated GitHub Packages publication for cross-repository delivery
 
-The renderer is still evolving. Remaining fidelity work includes browser-CSS versus Android/Skia shadow-kernel rasterization differences, residual DOM-versus-Compose/Skia font-metric and subpixel annotation-layout differences, additional upstream configuration parity where useful, and platform-specific performance tuning.
+Remaining fidelity work is mostly narrower platform differences: browser CSS versus Android/Skia rasterization, residual DOM-versus-Skia font/shaping/subpixel differences, less frequently used upstream configuration, and real-device performance tuning with large YAQMC lyric datasets.
 
-## Non-goals for the first milestone
-
-- Reimplement every parser from upstream AMLL
-- Couple the library to QQ Music or YAQMC playback internals
-- Use WebView, DOM, CSS or PixiJS
-
-## Usage
-
-完整中文接入文档见 [`docs/USAGE.zh-CN.md`](docs/USAGE.zh-CN.md)，包括 Gradle 引入、YAQMC DTO adapter、播放状态同步、背景人声/对唱、曲末底栏、样式配置和完整 Compose 示例。
+## Compose usage
 
 ```kotlin
 val state = remember { AMLLPlayerState() }
@@ -111,7 +65,36 @@ AMLLPlayer(
 )
 ```
 
-The renderer derives end-of-song from lyric-group timing, so the host does not need to provide a separate media duration/end signal for bottom-line focus.
+## Traditional Android View / Capacitor usage
+
+A host does not need to apply the Compose compiler plugin just to mount the native renderer:
+
+```kotlin
+val lyricsView = AMLLPlayerView(context).apply {
+    setLyricLines(lines)
+    update(positionMs = currentPositionMs, isPlaying = isPlaying)
+    onLineClick = { line -> player.seekTo(line.startTimeMs) }
+}
+
+container.addView(
+    lyricsView,
+    ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+    ),
+)
+```
+
+`AMLLPlayerView` uses `DisposeOnViewTreeLifecycleDestroyed`; mount it under an Activity/Fragment View tree with a normal lifecycle owner. Mutating calls follow ordinary Android View semantics and should be made on the main thread.
+
+## Obscene-word masking
+
+```kotlin
+state.updateMaskObsceneWordsMode(MaskObsceneWordsMode.PartialMask)
+state.updateMaskObsceneWordChar('*')
+```
+
+`LyricWord.obscene` is processed from the original unmasked lyric data, so changing mode or mask character is reversible without re-fetching lyrics. Ruby/roman annotations and timing metadata are preserved.
 
 ## Model
 
@@ -142,21 +125,61 @@ data class LyricLine(
 )
 ```
 
-## YAQMC integration plan
+## Dependency and publication
 
-1. Keep YAQMC's existing lyric fetch/parse pipeline.
-2. Add a tiny adapter from YAQMC's lyric DTO to `LyricLine`.
-3. Mount this Compose UI in the Android host rather than rendering lyrics in Capacitor/WebView.
-4. Feed the native renderer from the same playback position source used by Android MediaSession/native audio.
-5. Once stable, optionally move the whole Android full-screen lyric page to native Compose.
+Local development:
+
+```bash
+./gradlew :amll:publishReleasePublicationToMavenLocal
+```
+
+```kotlin
+repositories {
+    mavenLocal()
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation("dev.yaqmc:amll-android:0.1.0-SNAPSHOT")
+}
+```
+
+The repository also contains a GitHub Packages publish workflow. A release tag such as `v0.1.0-alpha.1` is published as Maven version `0.1.0-alpha.1`; manual workflow dispatch can provide a version directly. Publishing uses the repository `GITHUB_TOKEN` with `packages: write`.
+
+For a different private repository such as `YAQMC/YAQMC`, package download credentials are still required. CI may use its `GITHUB_TOKEN` only when it has read access to the package; otherwise use a PAT classic with `read:packages`. Do not commit package credentials to the repository.
+
+## YAQMC integration direction
+
+1. Keep YAQMC's existing lyric fetch/parse/provider pipeline.
+2. Convert the existing lyric document into `LyricLine` only when lyrics change.
+3. Mount `AMLLPlayerView` as a native sibling/overlay of the existing Capacitor WebView.
+4. Drive playback position/play state from YAQMC's Android/Rust Core clock instead of pushing per-frame updates through JavaScript.
+5. Route lyric-line clicks back to the native seek command.
+6. Once the overlay path is stable, decide whether the whole Android full-screen lyric page should move native.
 
 ## Build baseline
 
-- compile/target SDK 37
-- AGP 9.4.0
-- Kotlin/Compose compiler plugin 2.3.21
-- Compose BOM 2026.08.00
+- compile SDK 36
+- demo target SDK 36
 - minSdk 26
+- AGP 8.13.0
+- Kotlin / Compose compiler plugin 2.2.20
+- Compose BOM 2026.06.00 (Compose 1.11 generation)
+- Gradle 8.14.3
+- Java / Kotlin JVM target 21
+
+CI builds/tests the library and demo, publishes the release artifact to Maven Local, then compiles both a Compose consumer and a plain Android View consumer against the published coordinate.
+
+## Documentation
+
+完整中文接入说明见 [`docs/USAGE.zh-CN.md`](docs/USAGE.zh-CN.md)。
+
+## Non-goals for the first milestone
+
+- reimplement every upstream parser
+- couple `amll-android` to QQ Music or YAQMC network/provider internals
+- introduce a WebView/DOM/PixiJS rendering dependency
 
 ## License
 
