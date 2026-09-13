@@ -422,7 +422,8 @@ fun NativeFullScreenLyrics(
 - 不需要为了 renderer 自己再启动高频 timer；优先使用真实 audio engine / MediaSession 的位置时钟。
 - 如果宿主只能低频提供 position，renderer 仍可工作，但逐词运动和 seek 判定精度会随采样精度下降；必要时可关闭 auto seek detection，但真实跳转仍应调用 `state.seekTo(...)`。
 - 曲末判定来自所有主歌词 group 的最大 `endTimeMs`，不需要单独同步 media duration/end signal。
-- API 31+ 使用原生 blur effect；Android 8-11 会保留其它视觉层级而不强行使用不可用的 Gaussian RenderEffect。
+- emphasized grapheme glow 在 API 26+ 使用 native text shadow，直接采用 upstream 的零偏移、白色 shadow、em blur 半径和动画 alpha，不依赖 API 31 `RenderEffect`。
+- API 31+ 的歌词行距离模糊使用原生 blur effect；Android 8-11 会保留其它视觉层级而不强行使用不可用的 Gaussian RenderEffect。
 - 手动触摸/滚轮滚动会暂停 auto-align；滚动与惯性停止后默认再等待 5 秒恢复。
 - `horizontalPadding = Dp.Unspecified` 是默认值，表示使用 AMLL 的响应式 20dp/1em 规则；只有确实需要固定边距时再显式传 Dp。
 - `enableSpring = false` 不会让 transform 瞬移；主歌词 scale、背景 slide/scale 与精确 focus correction 会统一回退到 500ms CSS-ease 风格 transition。
@@ -431,7 +432,7 @@ fun NativeFullScreenLyrics(
 
 当前重点是 AMLL 动态逐词歌词的 Android-native parity。仍在继续收敛的部分包括：
 
-- CSS text-shadow/glow 的像素级一致性；
+- emphasized text-shadow 的半径、颜色、alpha envelope、零偏移和逐 grapheme transform 已与 upstream 对齐，但浏览器 CSS 与 Android/Skia 的 blur kernel 仍可能产生少量像素级栅格差异；
 - ruby/逐词 roman annotation 的 mask/DOM 几何还存在少量实现差异；
 - 其它较少使用的上游配置与平台细节仍可继续补齐；
 - 更多针对实际 YAQMC 大型歌词数据的性能压测。
