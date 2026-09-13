@@ -19,10 +19,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.14.3
-      - name: Build, test, and verify publication
+      - name: Build, test, and publish local artifact
         run: >-
           gradle
           :amll:testDebugUnitTest
           :amll:assembleRelease
           :amll:publishReleasePublicationToMavenLocal
           :demo:assembleDebug
+      - name: Compile published artifact as YAQMC-style consumer
+        run: gradle -p integration/consumer-smoke assembleDebug
