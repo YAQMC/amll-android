@@ -1,21 +1,32 @@
 # AMLL Android 调用与接入指南
 
-本文面向 YAQMC Android 端以及其他 Jetpack Compose 宿主，说明如何把播放状态和现有歌词 DTO 接入 `amll-android`。
+本文面向 YAQMC Android 以及其它 Android 宿主，说明如何接入 `amll-android`。
 
-> 当前库是纯 Android/Compose 实现，不使用 WebView、DOM 或 PixiJS。最低 Android 版本为 API 26。
+> 渲染器本身使用 Jetpack Compose，但不依赖 WebView、DOM 或 PixiJS。Compose 宿主可以直接使用 `AMLLPlayer`；传统 Activity / Fragment / Capacitor / View 宿主可以使用 `AMLLPlayerView`，无需为了歌词组件把整个宿主改成 Compose。
 
-## 1. 引入模块
+最低 Android 版本为 API 26。
 
-### 方式 A：同一 Gradle 工程直接引用
+## 1. 当前构建基线
 
-如果 YAQMC 与本仓库源码放在同一个 Gradle 工程中：
+- compile SDK 36
+- demo target SDK 36
+- minSdk 26
+- AGP 8.13.0
+- Kotlin / Compose compiler plugin 2.2.20
+- Compose BOM 2026.06.00（Compose 1.11 generation）
+- Gradle 8.14.3
+- Java / Kotlin JVM target 21
+
+这套基线与当前 YAQMC Android 宿主对齐，避免独立 AAR 在 Kotlin metadata、AGP 或 compileSdk 上高于宿主。
+
+## 2. 引入依赖
+
+### 2.1 同一 Gradle 工程
 
 ```kotlin
 // settings.gradle.kts
 include(":amll")
 ```
-
-应用模块：
 
 ```kotlin
 // app/build.gradle.kts
@@ -24,15 +35,15 @@ dependencies {
 }
 ```
 
-### 方式 B：本地 Maven
+### 2.2 Maven Local
 
-仓库当前已经配置 Maven publication，但这里不假设远程仓库已经发布。开发阶段可先发布到本机：
+先在 `amll-android` 仓库发布：
 
 ```bash
-./gradlew :amll:publishToMavenLocal
+./gradlew :amll:publishReleasePublicationToMavenLocal
 ```
 
-宿主工程：
+宿主：
 
 ```kotlin
 repositories {
@@ -46,9 +57,82 @@ dependencies {
 }
 ```
 
-## 2. 最小可运行示例
+CI 会把 release AAR 发布到 Maven Local，然后使用两个**独立 Gradle consumer**重新编译：一个验证 Compose API，一个验证不启用 Compose compiler plugin 的普通 Android View 宿主。
 
-核心只有三步：构造歌词、维护 `AMLLPlayerState`、渲染 `AMLLPlayer`。
+### 2.3 GitHub Packages
+
+仓库已经支持 repository-scoped GitHub Packages publication。发布 workflow 可以由 GitHub Release 或手动 dispatch 触发。
+
+发布版本来自：
+
+1. 环境变量 `AMLL_VERSION`；
+2. Gradle property `-PamllVersion=...`；
+3. 都不存在时回退 `0.1.0-SNAPSHOT`。
+
+例如 tag `v0.1.0-alpha.1` 会发布成 Maven version `0.1.0-alpha.1`。
+
+Gradle 发布仓库只会在 `GITHUB_ACTOR` 和 `GITHUB_TOKEN` 都存在时注册，因此普通本地/PR 构建不需要 GitHub 凭据。
+
+跨私有仓库消费时仍需认证。对于 `YAQMC/YAQMC`：
+
+- 如果它的 Actions token 被授予该 package 的读取权限，可以使用仓库 `GITHUB_TOKEN`；
+- 否则需要 PAT classic，并包含 `read:packages`；
+- 不要把 token 写进 `settings.gradle.kts` 或提交到仓库。
+
+## 3. 歌词模型
+
+### `LyricRuby`
+
+```kotlin
+LyricRuby(
+    startTimeMs = 12_000,
+    endTimeMs = 12_450,
+    text = "ㄋㄧˇ",
+)
+```
+
+一个 `LyricWord` 可以包含多个 ruby segment。renderer 会保持 segment 独立 shaping/flex geometry；存在 ruby 时，segment 时间会驱动整个 visual word box 的 mask 扫描。
+
+### `LyricWord`
+
+```kotlin
+LyricWord(
+    startTimeMs = 12_000,
+    endTimeMs = 12_450,
+    text = "你",
+    romanText = "ni",
+    obscene = false,
+    ruby = emptyList(),
+)
+```
+
+字段：
+
+- `startTimeMs` / `endTimeMs`：逐词时间；
+- `text`：基础歌词文本；
+- `romanText`：逐词 romanization，显示在主字下方；
+- `ruby`：逐段带时间的上方注音；
+- `obscene`：标记为需要按上游规则进行屏蔽的词。
+
+Ruby、主字、逐词 romanization 共用一个 parent word-level bright→dark mask。强调动画发生在子 grapheme 上时，mask 仍停留在 parent word coordinate space，不会跟着字符 transform 一起移动。
+
+### `LyricLine`
+
+```kotlin
+LyricLine(
+    words = words,
+    translatedLyric = "I still remember you",
+    romanLyric = "wo hai ji de ni",
+    startTimeMs = 12_000,
+    endTimeMs = 15_200,
+    isBackground = false,
+    isDuet = false,
+)
+```
+
+`translatedLyric` / `romanLyric` 是整行副歌词；`LyricWord.romanText` 是逐词 annotation，两者可以同时存在。
+
+## 4. Compose 宿主
 
 ```kotlin
 @Composable
@@ -74,113 +158,134 @@ fun LyricsScreen(
     AMLLPlayer(
         state = state,
         modifier = Modifier.fillMaxSize(),
+        style = AMLLStyle(),
         onLineClick = { line ->
             seekTo(line.startTimeMs)
-            // 让 UI 立即响应，下一次宿主播放器 position 回调会继续校准。
             state.seekTo(line.startTimeMs)
+        },
+        bottomLine = {
+            Text("Lyrics by Example Artist")
         },
     )
 }
 ```
 
-如果播放时钟本身就是 Flow/回调流，推荐直接在收集位置更新状态，而不是额外做 16 ms 的 UI 定时器：
+## 5. 传统 Android View / Capacitor 宿主
+
+`AMLLPlayerView` 是 `AbstractComposeView` wrapper。宿主代码本身不需要出现 `@Composable`，也不需要启用 Compose compiler plugin。
 
 ```kotlin
-LaunchedEffect(player) {
-    player.playbackState.collect { snapshot ->
-        state.update(
-            positionMs = snapshot.positionMs,
-            isPlaying = snapshot.isPlaying,
-        )
+val lyricsView = AMLLPlayerView(context).apply {
+    setLyricLines(lines)
+    update(
+        positionMs = currentPositionMs,
+        isPlaying = isPlaying,
+    )
+    onLineClick = { line ->
+        player.seekTo(line.startTimeMs)
+        seekTo(line.startTimeMs)
     }
 }
-```
 
-播放器能多频繁提供位置就多频繁推送。默认开启的 AMLL auto-seek 推导会观察每次 position sample，包括数值相同的重复 sample；明确的宿主 seek 则应单独使用 `state.seekTo(...)`。
-
-## 3. 歌词数据模型
-
-### `LyricWord`
-
-```kotlin
-LyricWord(
-    startTimeMs = 12_000,
-    endTimeMs = 12_450,
-    text = "你",
-    romanText = "ni",          // 可选：逐词音译，显示在词下方
-    obscene = false,
-    ruby = emptyList(),         // 可选：逐段 ruby，显示在词上方
+container.addView(
+    lyricsView,
+    ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+    ),
 )
 ```
 
-字段含义：
-
-- `startTimeMs` / `endTimeMs`：逐词时间，毫秒。
-- `text`：词本体；空格、标点可直接保留在文本中。
-- `romanText`：这个词自己的 romanization，不同于整行 `romanLyric`。
-- `ruby`：带独立时间的上标注音段。
-- `obscene`：预留给歌词优化/屏蔽逻辑；当前渲染接口允许模型携带该信息。
-
-### `LyricRuby`
+可直接调用：
 
 ```kotlin
-LyricRuby(
-    startTimeMs = 12_000,
-    endTimeMs = 12_450,
-    text = "ㄋㄧˇ",
+lyricsView.setLyricLines(lines)
+lyricsView.update(positionMs, isPlaying)
+lyricsView.updatePosition(positionMs)
+lyricsView.updatePlaybackState(isPlaying)
+lyricsView.seekTo(positionMs)
+lyricsView.setAutoSeekDetectionEnabled(enabled)
+lyricsView.setMaskObsceneWordsMode(mode)
+lyricsView.setMaskObsceneWordChar('*')
+lyricsView.style = AMLLStyle(...)
+```
+
+也可以通过 `lyricsView.state` 获取底层 `AMLLPlayerState` 做高级配置。
+
+`AMLLPlayerView` 使用 `ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed`，应挂在正常 Activity/Fragment lifecycle View tree 下。和普通 View 修改一样，状态更新建议在 Android main thread 调用。
+
+## 6. 播放状态与 Seek
+
+推荐入口：
+
+```kotlin
+state.update(
+    positionMs = currentPositionMs,
+    isPlaying = playerIsPlaying,
 )
 ```
 
-同一个词可以有多个 ruby segment；每段有自己的高亮时间。当前 renderer 与 upstream 一样，让 ruby、主字和逐词 `romanText` 共用同一个 word-level bright→dark mask；存在 ruby segment 时，segment 的时间会驱动整个词的 mask 扫描，并在 segment 间的时间空档保持当前位置。
-
-### `LyricLine`
+明确 seek 时：
 
 ```kotlin
-LyricLine(
-    words = words,
-    translatedLyric = "I still remember you",
-    romanLyric = "wo hai ji de ni",
-    startTimeMs = 12_000,
-    endTimeMs = 15_200,
-    isBackground = false,
-    isDuet = false,
-)
+player.seekTo(targetMs)
+state.seekTo(targetMs)
 ```
 
-如果不显式传 `startTimeMs/endTimeMs`，会从 `words` 的最早开始时间和最晚结束时间推导。
+不要只停止 position 更新而继续让 `isPlaying = true`。暂停状态会改变 inactive line scale、背景人声展开等视觉语义。
 
-`translatedLyric` 和 `romanLyric` 是**整行副歌词**；`LyricWord.romanText` 是跟随单词排版和运动的**逐词音译**，二者可以同时存在。
+### 自动 Seek 推导
 
-## 4. 背景人声与对唱
+默认开启：
+
+```kotlin
+state.updateAutoSeekDetectionEnabled(true)
+```
+
+关闭后，普通 position sample 不再进入自动 drift detector；明确调用 `seekTo()` 仍始终使用 seek-motion 语义。
+
+renderer 的运动由 media time 重建，不维护一个与播放器脱离的“自由运行歌词时钟”。因此 seek/pause/resume 后可以确定性恢复视觉状态。
+
+## 7. Obscene word masking
+
+v33 起 `LyricWord.obscene` 会被实际处理，而不是预留字段。
+
+```kotlin
+state.updateMaskObsceneWordsMode(MaskObsceneWordsMode.Disabled)
+state.updateMaskObsceneWordsMode(MaskObsceneWordsMode.FullMask)
+state.updateMaskObsceneWordsMode(MaskObsceneWordsMode.PartialMask)
+state.updateMaskObsceneWordChar('*')
+```
+
+语义与 upstream 对齐：
+
+- `Disabled`：保留原文本；
+- `FullMask`：所有非空白字符替换为 mask char；
+- `PartialMask`：短词全屏蔽；较长词保留首尾可见字符，中间非空白字符屏蔽。
+
+`AMLLPlayerState` 内部保留原始 lyric lines。运行时切换 mode/char 会从**原始文本**重新处理，因此不会发生“已经打星后再继续打星”的不可逆问题。
+
+屏蔽只改基础 lyric text；word timing、ruby、romanization 等元数据保持不变。
+
+## 8. 背景人声、对唱与注音
 
 ### 背景人声
 
-背景人声使用单独一条 `LyricLine`：
+背景行必须紧跟对应主行：
 
 ```kotlin
-val main = LyricLine(
-    words = mainWords,
-    isBackground = false,
+val lines = listOf(
+    LyricLine(words = mainWords),
+    LyricLine(words = backgroundWords, isBackground = true),
 )
-
-val background = LyricLine(
-    words = backgroundWords,
-    isBackground = true,
-)
-
-val lines = listOf(main, background)
 ```
 
-**重要：背景行在输入顺序上必须紧跟对应主行。** 当前 renderer 会把一条 `isBackground = true` 的行绑定到前一个还没有背景行的主行，并把二者作为同一个滚动目标。
+renderer 会把它们组合成一个滚动目标。背景先唱/后唱的布局判断依据两行第一个真实 word 的时间，而不是简单依赖同步过的 line start。
 
-AMLL 判断背景人声显示在主行上方还是下方时比较的是两行的**第一个真实 word 时间**。因此如果背景人声实际上先唱，可以保留更早的 `background.words.first().startTimeMs`；为了保证 group 顺序，建议 parser/adapter 仍然输出 `main -> background` 的行顺序。对于原始数据中 line start 被同步过的情况尤其适合这种方式。
-
-如需强制背景人声永远后置：
+强制背景人声后置：
 
 ```kotlin
-AMLLStyle(
-    alwaysPostpositionBackground = true,
-)
+AMLLStyle(alwaysPostpositionBackground = true)
 ```
 
 ### 对唱
@@ -192,80 +297,15 @@ LyricLine(
 )
 ```
 
-`isDuet = true` 会使用右侧 speaker 布局；歌曲只要包含 duet 行，renderer 会为两侧 speaker 保留对应的可用宽度。
+存在 duet 时，两侧 speaker 会按 AMLL 几何使用约 85% 可用内容宽度并保留 opposite-side inset。
 
-## 5. 播放状态同步
+### Ruby / Roman
 
-推荐使用：
+Ruby segment 独立 shape，然后以 flex-row-like 方式居中。Mask sweep 使用 ruby segment UTF-16 code-unit count，保留 segment timing gap；逐词 romanization 保留 upstream `0.3em` inline-end padding 语义。
 
-```kotlin
-state.update(
-    positionMs = currentPositionMs,
-    isPlaying = playerIsPlaying,
-)
-```
+## 9. 曲末与 Bottom Line
 
-也可以分别调用：
-
-```kotlin
-state.updatePlaybackState(isPlaying)
-state.update(positionMs)
-```
-
-或在明确 seek 时：
-
-```kotlin
-state.seekTo(newPositionMs)
-```
-
-### 暂停
-
-必须同步 `isPlaying = false`。AMLL 的暂停视觉语义不只是停止时间：暂停时 inactive 主行会回到 100% scale，背景人声也会保持展开，因此不要只停止 position 更新而仍让 `isPlaying` 保持 `true`。
-
-### Seek
-
-实际 seek 建议同时做两件事：
-
-```kotlin
-player.seekTo(targetMs)
-state.seekTo(targetMs)
-```
-
-第一步修改真实播放器，第二步让歌词 UI 立刻跳到目标时间并明确标记为 host seek。之后继续用真实播放器的位置回调驱动 `state.update(...)`。
-
-普通 `state.update(...)` 和明确的 `state.seekTo(...)` 在内部是两条不同语义：前者只是播放时钟 sample，后者即使在自动 seek 检测关闭时也始终会触发 seek-motion 语义。
-
-### 自动 Seek 推导
-
-默认与 AMLL 一样开启：
-
-```kotlin
-val state = remember {
-    AMLLPlayerState(initialAutoSeekDetectionEnabled = true)
-}
-```
-
-如果宿主播放时钟粒度太粗，频繁被自动 drift detector 识别成 seek，可以关闭自动推导：
-
-```kotlin
-state.updateAutoSeekDetectionEnabled(false)
-```
-
-再次开启：
-
-```kotlin
-state.updateAutoSeekDetectionEnabled(true)
-```
-
-切换开关会重置 detector 基线。关闭时 renderer 不再调用自动 detector，但显式 `state.seekTo(...)` 仍然始终有效；这与当前 upstream `setCurrentTime()` 的运行时代码一致。
-
-### 曲末与 Bottom Line
-
-曲末状态不需要宿主额外提供媒体 duration 或 ended 回调。renderer 与当前 upstream AMLL 一样，会扫描所有歌词 group 的**主歌词 `endTimeMs`**，取最大值作为歌词时间线终点；当 `positionMs >= maxEndTimeMs` 时进入 end-of-song 状态。
-
-这里特意不是直接读取“最后开始的那一行”的结束时间，因为尾部歌词可能重叠；也不会让背景人声自己的 `endTimeMs` 独立延长 group 生命周期，这与 upstream `LyricLineGroupBase.endTime` 一致。
-
-可以通过 `bottomLine` slot 在歌词末尾放歌曲创作者、来源等信息：
+renderer 从所有主歌词 group 的最大 `endTimeMs` 推导 end-of-song，不要求宿主再提供 media duration/ended signal。
 
 ```kotlin
 AMLLPlayer(
@@ -276,166 +316,69 @@ AMLLPlayer(
 )
 ```
 
-`bottomLine` 是真实的 trailing `LazyColumn` item，会使用实际测量高度参与 `Top / Center / Bottom` focus anchor。到达曲末时：
+到达歌词时间线末尾后，active lyric 状态清空；有 `bottomLine` 时自动聚焦它，否则聚焦最后一个 lyric group。
 
-- 传了 `bottomLine`：自动聚焦 bottom line；
-- 没传 `bottomLine`：自动聚焦显示顺序中的最后一个主歌词 group；
-- 所有歌词行退出 active/highlighted 视觉；
-- focus motion 切换到 AMLL 的曲末 medium spring；
-- bottom line 从约 `0.20` opacity 过渡到 `0.85`，并参与距离 blur。
-
-因此 YAQMC 只需要继续提供真实播放 position，不需要为了这个行为再额外同步歌曲 duration。
-
-## 6. YAQMC DTO 适配
-
-库刻意不依赖 YAQMC、QQ Music 或某一种歌词 parser。推荐在 YAQMC Android 层放一个很薄的 adapter。
-
-下面字段名是示例，请替换成 YAQMC 当前 DTO 的真实字段：
+## 10. 常用样式
 
 ```kotlin
-fun YaqmcLineDto.toAMLL(): LyricLine {
-    val mappedWords = words.map { word ->
-        LyricWord(
-            startTimeMs = word.startMs,
-            endTimeMs = word.endMs,
-            text = word.text,
-            romanText = word.romanization,
-            ruby = word.rubySegments.map { ruby ->
-                LyricRuby(
-                    startTimeMs = ruby.startMs,
-                    endTimeMs = ruby.endMs,
-                    text = ruby.text,
-                )
-            },
-        )
-    }
-
-    return LyricLine(
-        words = mappedWords,
-        translatedLyric = translation.orEmpty(),
-        romanLyric = romanization.orEmpty(),
-        startTimeMs = startMs,
-        endTimeMs = endMs,
-        isBackground = isBackground,
-        isDuet = isDuet,
-    )
-}
-
-fun List<YaqmcLineDto>.toAMLLLyrics(): List<LyricLine> =
-    map(YaqmcLineDto::toAMLL)
-```
-
-建议 adapter 只负责数据转换，不把播放器实例、MediaSession、网络请求或 parser 逻辑放进 `amll` module。
-
-## 7. 样式配置
-
-默认样式已经尽量对齐 AMLL，可以只覆盖宿主真正需要改变的项：
-
-```kotlin
-val lyricStyle = AMLLStyle(
+AMLLStyle(
     lineFontSize = 34.sp,
     secondaryFontSize = 17.sp,
-    activeColor = Color.White,
     lyricFontWeight = FontWeight.SemiBold,
     enableBlur = true,
     enableScale = true,
     enableSpring = true,
     hidePassedLines = false,
+    alwaysPostpositionBackground = false,
     wordFadeWidthEm = 1f,
     alignPosition = 0.35f,
     alignAnchor = AMLLAlignAnchor.Center,
 )
-
-AMLLPlayer(
-    state = state,
-    style = lyricStyle,
-)
 ```
 
-常用项：
+重点默认行为：
 
-| 参数 | 含义 | 默认语义 |
-| --- | --- | --- |
-| `lineFontSize` | 主歌词字号 | `34.sp` |
-| `secondaryFontSize` | 翻译/整行音译字号 | `17.sp`，即主字号约 0.5em |
-| `lyricFontWeight` | 歌词统一字重 | `600 / SemiBold` |
-| `activeColor` | 已唱/亮色 | 白色 |
-| `inactiveColor` | active gradient 的暗端基色 | AMLL gradient dark 约 0.4 alpha |
-| `backgroundLineScale` | 背景歌词字号比例 | `0.70` |
-| `alwaysPostpositionBackground` | 背景人声是否强制后置 | `false` |
-| `enableBlur` | 距离模糊 | `true` |
-| `enableScale` | 是否启用主歌词 inactive 97% 缩放 | `true`；不影响背景歌词独立的 75% scale |
-| `enableSpring` | 是否启用物理弹簧 transform | `true`；关闭后按 upstream 回退为 500ms CSS `ease` transform transition |
-| `hidePassedLines` | 播放时隐藏已经越过焦点边界的歌词 | `false`；暂停时旧行会恢复 |
-| `wordFadeWidthEm` | 连续逐词 bright→dark gradient 的过渡宽度 | `1em`，Android-like |
-| `horizontalPadding` | 歌词 wrapper 左右留白 | 默认响应式：容器宽度 `<=500dp` 为 `20dp`，否则 `1em`；显式 Dp 为固定覆盖 |
-| `alignPosition` | 焦点位于 viewport 高度的比例 | `0.35` |
-| `alignAnchor` | 焦点对齐目标行的 Top/Center/Bottom | `Center` |
-| `autoAlignResumeDelayMs` | 手动滚动结束后恢复跟随的延迟 | `5000 ms` |
+- 主歌词 inactive scale `0.97`；
+- 背景歌词 inactive scale `0.75`；
+- `enableSpring = false` 时使用约 500ms CSS-ease 风格 transform fallback，不瞬移；
+- `hidePassedLines = false`；
+- focus 默认 `Center @ 0.35`；
+- `horizontalPadding = Dp.Unspecified` 时，容器 `<=500dp` 用 `20dp`，更宽时用约 `1em`；
+- 字重默认 `600 / SemiBold`；
+- word fade width 默认 `1em`。
 
-`verticalPadding`、`lineSpacing` 等也可以覆盖，但如果目标是 AMLL parity，优先保留默认值。
+## 11. YAQMC 推荐接入结构
 
-## 8. 完整 Compose 接入模板
+当前 YAQMC Android 是 Capacitor `BridgeActivity + WebView`，因此推荐先采用 native overlay，而不是一次重写整个页面：
 
-```kotlin
-@Composable
-fun NativeFullScreenLyrics(
-    lyricLines: List<LyricLine>,
-    player: YaqmcPlayer,
-) {
-    val state = remember { AMLLPlayerState(initialIsPlaying = player.isPlaying) }
+1. 保留现有歌词 provider / fetch / parser；
+2. 歌词变化时，把当前 `LyricDocument` 转成 `List<LyricLine>`；
+3. 在 Android `MainActivity` 的 View hierarchy 中把 `AMLLPlayerView` 挂成 WebView sibling/overlay；
+4. JavaScript 只负责页面状态和“显示/隐藏 native lyrics”等低频事件，不做逐帧 position bridge；
+5. position/play/pause/seek 优先直接读取 YAQMC Android/Rust Core 的 native playback clock；
+6. `onLineClick` 直接调用 native seek，再同步 `AMLLPlayerView.seekTo()`；
+7. overlay 路径稳定后，再决定是否把 Android full-screen lyrics 整页迁移到 native UI。
 
-    LaunchedEffect(lyricLines) {
-        state.setLyricLines(lyricLines)
-    }
+这样既能保留现有 YAQMC Web 前端，又能把歌词这种高频、动画密集的渲染链路移出 WebView。
 
-    LaunchedEffect(player) {
-        player.positionFlow.collect { position ->
-            state.update(
-                positionMs = position,
-                isPlaying = player.isPlaying,
-            )
-        }
-    }
+## 12. 生命周期与性能
 
-    AMLLPlayer(
-        state = state,
-        modifier = Modifier.fillMaxSize(),
-        style = AMLLStyle(),
-        onLineClick = { line ->
-            player.seekTo(line.startTimeMs)
-            state.seekTo(line.startTimeMs)
-        },
-        bottomLine = {
-            Text("Lyrics by ${player.currentTrack.lyricArtist}")
-        },
-    )
-}
-```
+- 一个歌词页面维持一个 state/view，不要每个 position tick 重建；
+- 换歌时调用 `setLyricLines()`；
+- 不要为了 renderer 额外启动独立 16ms JS timer；优先使用 native audio clock；
+- 主线程只提交必要的状态更新，歌词解析/网络请求继续留在原有层；
+- API 31+ 距离 blur 可以使用原生 blur effect；旧版本保持其它视觉层级而不强制软件 Gaussian blur；
+- emphasized text shadow 在 API 26+ 使用 native text shadow，不依赖 API 31 `RenderEffect`；
+- CI 已覆盖普通 Compose consumer 和不启用 Compose compiler plugin 的 View consumer。
 
-`YaqmcPlayer`、`positionFlow`、`currentTrack.lyricArtist` 只是宿主接口示意；核心要求只有：**把真实 media position 和 isPlaying 持续喂给 `AMLLPlayerState`。** 曲末焦点由歌词时间线自己推导，不要求宿主再提供 duration。
+## 13. 当前边界
 
-## 9. 生命周期与性能建议
+仍需继续验证的主要是：
 
-- 一个歌词页面保持一个 `AMLLPlayerState`，不要每个 position tick 重建 state。
-- 换歌时调用 `setLyricLines(newLines)`，并立即 `seekTo()` 或等待真实 position sample 校准。
-- 不需要为了 renderer 自己再启动高频 timer；优先使用真实 audio engine / MediaSession 的位置时钟。
-- 如果宿主只能低频提供 position，renderer 仍可工作，但逐词运动和 seek 判定精度会随采样精度下降；必要时可关闭 auto seek detection，但真实跳转仍应调用 `state.seekTo(...)`。
-- 曲末判定来自所有主歌词 group 的最大 `endTimeMs`，不需要单独同步 media duration/end signal。
-- emphasized grapheme glow 在 API 26+ 使用 native text shadow，直接采用 upstream 的零偏移、白色 shadow、em blur 半径和动画 alpha，不依赖 API 31 `RenderEffect`。
-- ruby、主字与逐词 roman 共用同一个 word mask；ruby segment 的时间会驱动整个 visual word box 的扫描，宿主不需要额外同步 annotation progress。
-- API 31+ 的歌词行距离模糊使用原生 blur effect；Android 8-11 会保留其它视觉层级而不强行使用不可用的 Gaussian RenderEffect。
-- 手动触摸/滚轮滚动会暂停 auto-align；滚动与惯性停止后默认再等待 5 秒恢复。
-- `horizontalPadding = Dp.Unspecified` 是默认值，表示使用 AMLL 的响应式 20dp/1em 规则；只有确实需要固定边距时再显式传 Dp。
-- `enableSpring = false` 不会让 transform 瞬移；主歌词 scale、背景 slide/scale 与精确 focus correction 会统一回退到 500ms CSS-ease 风格 transition。
+- 浏览器 CSS 与 Android/Skia shadow blur kernel 的少量像素差异；
+- DOM 与 Compose/Skia 在字体度量、shaping、亚像素排版上的残余差异；
+- 较少使用的 upstream 配置；
+- YAQMC 真实大型逐词歌词、低端设备和长时间播放的性能/内存表现；
+- YAQMC 主仓 package 权限和真正的 native overlay 集成。
 
-## 10. 当前边界
-
-当前重点是 AMLL 动态逐词歌词的 Android-native parity。仍在继续收敛的部分包括：
-
-- emphasized text-shadow 的半径、颜色、alpha envelope、零偏移和逐 grapheme transform 已与 upstream 对齐，但浏览器 CSS 与 Android/Skia 的 blur kernel 仍可能产生少量像素级栅格差异；
-- ruby/逐词 roman 已与主字共用 word-level mask，并按 annotation-aware word box 与 ruby segment 时间推进；剩余差异主要来自 DOM 与 Compose/Skia 的字体度量、字形 shaping 和亚像素排版；
-- 其它较少使用的上游配置与平台细节仍可继续补齐；
-- 更多针对实际 YAQMC 大型歌词数据的性能压测。
-
-这些不会改变上面的核心接入方式；后续 parity 更新应尽量保持 `LyricLine -> AMLLPlayerState -> AMLLPlayer` 这一层 API 稳定。
+这些边界不改变稳定宿主接口：Compose 使用 `LyricLine -> AMLLPlayerState -> AMLLPlayer`，传统 Android 使用 `LyricLine -> AMLLPlayerView`。
