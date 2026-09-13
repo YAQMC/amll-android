@@ -33,7 +33,9 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2026.08.00")
+    // Compose 1.12+ requires compileSdk 37 / AGP 9. Keep the library on the latest
+    // SDK-36-compatible BOM so its published AAR can be consumed by the YAQMC Android host.
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
 
     // These Compose types are part of the public AMLL API (`@Composable`, Modifier, Color,
     // TextUnit and FontWeight), so consumers of the published AAR need them on compile classpaths.
