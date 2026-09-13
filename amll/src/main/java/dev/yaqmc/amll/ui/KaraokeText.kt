@@ -339,10 +339,19 @@ private fun DrawScope.drawCharacter(
     activeColor: Color,
     inactiveColor: Color,
 ) {
-    val xOffset = baseTranslateX + characterMotion.translateXEm * fontSizePx
+    val characterTranslateXPx = characterMotion.translateXEm * fontSizePx
+    val xOffset = baseTranslateX + characterTranslateXPx
     val yOffset = baseTranslateY +
         (wordMotion.translateYEm + characterMotion.translateYEm) * fontSizePx
     val pivot = geometry.bounds.center
+    val localWordMask = wordMask?.let { mask ->
+        resolveCharacterLocalWordMask(
+            wordMask = mask,
+            characterTranslateXPx = characterTranslateXPx,
+            characterScale = characterMotion.scale,
+            pivotXPx = pivot.x,
+        )
+    }
 
     val shadowSpec = resolveCharacterTextShadowSpec(characterMotion, fontSizePx)
     val localInkBounds = shadowLayout?.inkBounds
@@ -383,7 +392,7 @@ private fun DrawScope.drawCharacter(
         drawWordMask(
             layout = layout,
             path = geometry.full,
-            mask = wordMask,
+            mask = localWordMask,
             brightColor = activeColor,
             darkColor = inactiveColor,
         )

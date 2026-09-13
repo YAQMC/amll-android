@@ -11,6 +11,32 @@ internal data class WordMaskGradientPx(
 )
 
 /**
+ * Converts the parent word's fixed mask interval into the local coordinates used while drawing one
+ * transformed emphasized grapheme.
+ *
+ * Upstream applies `mask-image` to the word element and applies translate/scale to descendant
+ * grapheme spans. The mask therefore stays fixed in word space while the glyph moves underneath it.
+ * Native drawing applies the grapheme transform to the Canvas itself, so the interval must be
+ * inverse-mapped before drawing to keep its final screen-space position unchanged.
+ */
+internal fun resolveCharacterLocalWordMask(
+    wordMask: WordMaskGradientPx,
+    characterTranslateXPx: Float,
+    characterScale: Float,
+    pivotXPx: Float,
+): WordMaskGradientPx {
+    val scale = characterScale.coerceAtLeast(0.0001f)
+
+    fun inverseMap(parentX: Float): Float =
+        pivotXPx + (parentX - characterTranslateXPx - pivotXPx) / scale
+
+    return WordMaskGradientPx(
+        fadeStartX = inverseMap(wordMask.fadeStartX),
+        fadeEndX = inverseMap(wordMask.fadeEndX),
+    )
+}
+
+/**
  * Returns the horizontal sweep progress used by AMLL's word-level mask.
  *
  * Plain words move linearly from [LyricWord.startTimeMs] to [LyricWord.endTimeMs]. When ruby timing

@@ -117,4 +117,59 @@ class WordMaskGradientTest {
         assertEquals(-0.5f, resolveWordMaskSweepProgress(word, 500L), 0.0001f)
         assertEquals(1.5f, resolveWordMaskSweepProgress(word, 2_500L), 0.0001f)
     }
+
+    @Test fun untransformedCharacterKeepsParentMaskCoordinates() {
+        val mask = WordMaskGradientPx(20f, 60f)
+        val local = resolveCharacterLocalWordMask(
+            wordMask = mask,
+            characterTranslateXPx = 0f,
+            characterScale = 1f,
+            pivotXPx = 40f,
+        )
+
+        assertEquals(mask.fadeStartX, local.fadeStartX, 0.0001f)
+        assertEquals(mask.fadeEndX, local.fadeEndX, 0.0001f)
+    }
+
+    @Test fun translatedCharacterInverseMapsMaskToFixedParentPosition() {
+        val local = resolveCharacterLocalWordMask(
+            wordMask = WordMaskGradientPx(20f, 60f),
+            characterTranslateXPx = 8f,
+            characterScale = 1f,
+            pivotXPx = 40f,
+        )
+
+        assertEquals(12f, local.fadeStartX, 0.0001f)
+        assertEquals(52f, local.fadeEndX, 0.0001f)
+    }
+
+    @Test fun scaledCharacterInverseMapsMaskAroundGlyphPivot() {
+        val local = resolveCharacterLocalWordMask(
+            wordMask = WordMaskGradientPx(20f, 60f),
+            characterTranslateXPx = 0f,
+            characterScale = 2f,
+            pivotXPx = 40f,
+        )
+
+        assertEquals(30f, local.fadeStartX, 0.0001f)
+        assertEquals(50f, local.fadeEndX, 0.0001f)
+    }
+
+    @Test fun translatedAndScaledCharacterStillResolvesToParentMaskAfterTransform() {
+        val translate = 8f
+        val scale = 1.25f
+        val pivot = 40f
+        val parent = WordMaskGradientPx(20f, 60f)
+        val local = resolveCharacterLocalWordMask(
+            wordMask = parent,
+            characterTranslateXPx = translate,
+            characterScale = scale,
+            pivotXPx = pivot,
+        )
+
+        fun forward(localX: Float): Float = translate + pivot + scale * (localX - pivot)
+
+        assertEquals(parent.fadeStartX, forward(local.fadeStartX), 0.0001f)
+        assertEquals(parent.fadeEndX, forward(local.fadeEndX), 0.0001f)
+    }
 }
