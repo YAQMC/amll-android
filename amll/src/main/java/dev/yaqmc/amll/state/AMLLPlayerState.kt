@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.yaqmc.amll.model.LyricLine
+import dev.yaqmc.amll.model.MaskObsceneWordsMode
 
 @Stable
 class AMLLPlayerState(
@@ -13,9 +14,17 @@ class AMLLPlayerState(
     initialPositionMs: Long = 0L,
     initialIsPlaying: Boolean = true,
     initialAutoSeekDetectionEnabled: Boolean = true,
+    initialMaskObsceneWordsMode: MaskObsceneWordsMode = MaskObsceneWordsMode.Disabled,
+    initialMaskObsceneWordChar: Char = '*',
 ) {
+    private var rawLyricLines: List<LyricLine> = lyricLines.sortedBy(LyricLine::startTimeMs)
+
     private var _lyricLines: List<LyricLine> by mutableStateOf(
-        lyricLines.sortedBy(LyricLine::startTimeMs)
+        applyObsceneWordMask(
+            lines = rawLyricLines,
+            mode = initialMaskObsceneWordsMode,
+            maskChar = initialMaskObsceneWordChar,
+        ),
     )
 
     val lyricLines: List<LyricLine>
@@ -46,11 +55,20 @@ class AMLLPlayerState(
     var autoSeekDetectionEnabled: Boolean by mutableStateOf(initialAutoSeekDetectionEnabled)
         private set
 
+    /** Current obscene-word masking mode. Disabled by default, matching upstream AMLL. */
+    var maskObsceneWordsMode: MaskObsceneWordsMode by mutableStateOf(initialMaskObsceneWordsMode)
+        private set
+
+    /** Single character used to replace masked non-whitespace UTF-16 code units. */
+    var maskObsceneWordChar: Char by mutableStateOf(initialMaskObsceneWordChar)
+        private set
+
     val activeLineIndex: Int
         get() = findActiveLineIndex(_lyricLines, positionMs)
 
     fun setLyricLines(lines: List<LyricLine>) {
-        _lyricLines = lines.sortedBy(LyricLine::startTimeMs)
+        rawLyricLines = lines.sortedBy(LyricLine::startTimeMs)
+        rebuildProcessedLyricLines()
     }
 
     fun updatePlaybackState(isPlaying: Boolean) {
@@ -59,6 +77,23 @@ class AMLLPlayerState(
 
     fun updateAutoSeekDetectionEnabled(enable: Boolean) {
         autoSeekDetectionEnabled = enable
+    }
+
+    /**
+     * Mirrors upstream `setMaskObsceneWords()`. Reprocessing starts from the original lyric data so
+     * switching between modes never masks an already-masked string a second time.
+     */
+    fun updateMaskObsceneWordsMode(mode: MaskObsceneWordsMode) {
+        if (maskObsceneWordsMode == mode) return
+        maskObsceneWordsMode = mode
+        rebuildProcessedLyricLines()
+    }
+
+    /** Mirrors upstream `setMaskObsceneWordChar()`. */
+    fun updateMaskObsceneWordChar(char: Char) {
+        if (maskObsceneWordChar == char) return
+        maskObsceneWordChar = char
+        rebuildProcessedLyricLines()
     }
 
     fun seekTo(positionMs: Long) {
@@ -79,6 +114,14 @@ class AMLLPlayerState(
 
     fun update(positionMs: Long) {
         pushPosition(positionMs)
+    }
+
+    private fun rebuildProcessedLyricLines() {
+        _lyricLines = applyObsceneWordMask(
+            lines = rawLyricLines,
+            mode = maskObsceneWordsMode,
+            maskChar = maskObsceneWordChar,
+        )
     }
 
     private fun pushPosition(positionMs: Long) {
