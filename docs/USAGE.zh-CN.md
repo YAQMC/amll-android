@@ -131,7 +131,7 @@ LyricRuby(
 )
 ```
 
-同一个词可以有多个 ruby segment；每段有自己的高亮时间。
+同一个词可以有多个 ruby segment；每段有自己的高亮时间。当前 renderer 与 upstream 一样，让 ruby、主字和逐词 `romanText` 共用同一个 word-level bright→dark mask；存在 ruby segment 时，segment 的时间会驱动整个词的 mask 扫描，并在 segment 间的时间空档保持当前位置。
 
 ### `LyricLine`
 
@@ -423,6 +423,7 @@ fun NativeFullScreenLyrics(
 - 如果宿主只能低频提供 position，renderer 仍可工作，但逐词运动和 seek 判定精度会随采样精度下降；必要时可关闭 auto seek detection，但真实跳转仍应调用 `state.seekTo(...)`。
 - 曲末判定来自所有主歌词 group 的最大 `endTimeMs`，不需要单独同步 media duration/end signal。
 - emphasized grapheme glow 在 API 26+ 使用 native text shadow，直接采用 upstream 的零偏移、白色 shadow、em blur 半径和动画 alpha，不依赖 API 31 `RenderEffect`。
+- ruby、主字与逐词 roman 共用同一个 word mask；ruby segment 的时间会驱动整个 visual word box 的扫描，宿主不需要额外同步 annotation progress。
 - API 31+ 的歌词行距离模糊使用原生 blur effect；Android 8-11 会保留其它视觉层级而不强行使用不可用的 Gaussian RenderEffect。
 - 手动触摸/滚轮滚动会暂停 auto-align；滚动与惯性停止后默认再等待 5 秒恢复。
 - `horizontalPadding = Dp.Unspecified` 是默认值，表示使用 AMLL 的响应式 20dp/1em 规则；只有确实需要固定边距时再显式传 Dp。
@@ -433,7 +434,7 @@ fun NativeFullScreenLyrics(
 当前重点是 AMLL 动态逐词歌词的 Android-native parity。仍在继续收敛的部分包括：
 
 - emphasized text-shadow 的半径、颜色、alpha envelope、零偏移和逐 grapheme transform 已与 upstream 对齐，但浏览器 CSS 与 Android/Skia 的 blur kernel 仍可能产生少量像素级栅格差异；
-- ruby/逐词 roman annotation 的 mask/DOM 几何还存在少量实现差异；
+- ruby/逐词 roman 已与主字共用 word-level mask，并按 annotation-aware word box 与 ruby segment 时间推进；剩余差异主要来自 DOM 与 Compose/Skia 的字体度量、字形 shaping 和亚像素排版；
 - 其它较少使用的上游配置与平台细节仍可继续补齐；
 - 更多针对实际 YAQMC 大型歌词数据的性能压测。
 
