@@ -259,6 +259,33 @@ state.updateAutoSeekDetectionEnabled(true)
 
 切换开关会重置 detector 基线。关闭时 renderer 不再调用自动 detector，但显式 `state.seekTo(...)` 仍然始终有效；这与当前 upstream `setCurrentTime()` 的运行时代码一致。
 
+### 曲末与 Bottom Line
+
+曲末状态不需要宿主额外提供媒体 duration 或 ended 回调。renderer 与当前 upstream AMLL 一样，会扫描所有歌词 group 的**主歌词 `endTimeMs`**，取最大值作为歌词时间线终点；当 `positionMs >= maxEndTimeMs` 时进入 end-of-song 状态。
+
+这里特意不是直接读取“最后开始的那一行”的结束时间，因为尾部歌词可能重叠；也不会让背景人声自己的 `endTimeMs` 独立延长 group 生命周期，这与 upstream `LyricLineGroupBase.endTime` 一致。
+
+可以通过 `bottomLine` slot 在歌词末尾放歌曲创作者、来源等信息：
+
+```kotlin
+AMLLPlayer(
+    state = state,
+    bottomLine = {
+        Text("Lyrics by Example Artist")
+    },
+)
+```
+
+`bottomLine` 是真实的 trailing `LazyColumn` item，会使用实际测量高度参与 `Top / Center / Bottom` focus anchor。到达曲末时：
+
+- 传了 `bottomLine`：自动聚焦 bottom line；
+- 没传 `bottomLine`：自动聚焦显示顺序中的最后一个主歌词 group；
+- 所有歌词行退出 active/highlighted 视觉；
+- focus motion 切换到 AMLL 的曲末 medium spring；
+- bottom line 从约 `0.20` opacity 过渡到 `0.85`，并参与距离 blur。
+
+因此 YAQMC 只需要继续提供真实播放 position，不需要为了这个行为再额外同步歌曲 duration。
+
 ## 6. YAQMC DTO 适配
 
 库刻意不依赖 YAQMC、QQ Music 或某一种歌词 parser。推荐在 YAQMC Android 层放一个很薄的 adapter。
@@ -379,11 +406,14 @@ fun NativeFullScreenLyrics(
             player.seekTo(line.startTimeMs)
             state.seekTo(line.startTimeMs)
         },
+        bottomLine = {
+            Text("Lyrics by ${player.currentTrack.lyricArtist}")
+        },
     )
 }
 ```
 
-`YaqmcPlayer`、`positionFlow` 只是宿主接口示意；核心要求只有：**把真实 media position 和 isPlaying 持续喂给 `AMLLPlayerState`。**
+`YaqmcPlayer`、`positionFlow`、`currentTrack.lyricArtist` 只是宿主接口示意；核心要求只有：**把真实 media position 和 isPlaying 持续喂给 `AMLLPlayerState`。** 曲末焦点由歌词时间线自己推导，不要求宿主再提供 duration。
 
 ## 9. 生命周期与性能建议
 
@@ -391,6 +421,7 @@ fun NativeFullScreenLyrics(
 - 换歌时调用 `setLyricLines(newLines)`，并立即 `seekTo()` 或等待真实 position sample 校准。
 - 不需要为了 renderer 自己再启动高频 timer；优先使用真实 audio engine / MediaSession 的位置时钟。
 - 如果宿主只能低频提供 position，renderer 仍可工作，但逐词运动和 seek 判定精度会随采样精度下降；必要时可关闭 auto seek detection，但真实跳转仍应调用 `state.seekTo(...)`。
+- 曲末判定来自所有主歌词 group 的最大 `endTimeMs`，不需要单独同步 media duration/end signal。
 - API 31+ 使用原生 blur effect；Android 8-11 会保留其它视觉层级而不强行使用不可用的 Gaussian RenderEffect。
 - 手动触摸/滚轮滚动会暂停 auto-align；滚动与惯性停止后默认再等待 5 秒恢复。
 - `horizontalPadding = Dp.Unspecified` 是默认值，表示使用 AMLL 的响应式 20dp/1em 规则；只有确实需要固定边距时再显式传 Dp。
@@ -402,7 +433,6 @@ fun NativeFullScreenLyrics(
 
 - CSS text-shadow/glow 的像素级一致性；
 - ruby/逐词 roman annotation 的 mask/DOM 几何还存在少量实现差异；
-- bottom-line / end-of-song focus，需要宿主提供可靠 duration/end signal；
 - 其它较少使用的上游配置与平台细节仍可继续补齐；
 - 更多针对实际 YAQMC 大型歌词数据的性能压测。
 

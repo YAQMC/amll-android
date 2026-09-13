@@ -23,7 +23,7 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 
 ## Current replication status
 
-The first twenty-eight AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity, mask, responsive-wrapper and playback-control behavior instead of relying on generic Compose defaults:
+The first twenty-nine AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity, mask, responsive-wrapper, playback-control and end-of-song behavior instead of relying on generic Compose defaults:
 
 - active/inactive main-line scale follows AMLL's `1.0 / 0.97` behavior using the upstream physical scale spring
 - `enableScale` mirrors upstream `setEnableScale()` and disables only the main-line 97% treatment; background-vocal 75% inactive scale remains independent
@@ -54,17 +54,21 @@ The first twenty-eight AMLL-parity passes now cover the main timing, annotation,
 - native Android drag/fling physics remain owned by `LazyColumn`; the five-second auto-align delay starts only after physical scrolling is actually idle
 - repeated touch input, tap interruptions and multi-touch re-anchoring restart the same suspension lifecycle without consuming native pointer events
 - focus scrolling uses AMLL's interval-adaptive vertical spring policy; seek/interlude motion switches to the slower upstream spring, or the shared 500ms transform fallback when springs are disabled
+- end-of-song is derived from the maximum main-line `endTime` across all lyric groups, matching upstream without requiring media duration/end callbacks from the host
+- end-of-song clears active lyric highlighting and switches focus motion to AMLL's medium end spring
+- an optional measured `bottomLine` Compose slot stays at the real end of the lyric list; at end-of-song it becomes the focus target, otherwise the final lyric group is focused
+- the bottom line follows AMLL's `0.20 -> 0.85` focus opacity hierarchy, approximately `0.7em` typography, inherited lyric weight and distance-blur behavior
 - automatic focus defaults to AMLL's viewport-relative `Center @ 0.35` alignment instead of a fixed dp offset
 - Top / Center / Bottom focus anchors are supported and use the target item's measured height like upstream layout
-- leading/trailing list space expands from the real composed viewport size so the first and last lyric items can also reach the configured focus anchor
+- leading/trailing list space expands from the real composed viewport size so the first, last and optional bottom-line items can reach the configured focus anchor
 - lyric-group vertical rhythm comes from AMLL's measured `0.4em` wrapper padding and `0.3em` main/background gap rather than a fixed global dp gap
 - horizontal wrapper padding is responsive like upstream: `20dp` at <=500dp composed width, otherwise `1em`; hosts may explicitly override it
 - secondary lyric defaults follow AMLL's `0.5em` font, `0.75em` total line-height and 0.3 opacity hierarchy
 - songs containing duet lines measure each speaker at 85% content width on the correct side, so wrapping and group height follow AMLL's 15% opposite-speaker inset
 - lyric typography uses the react-full default weight 600 consistently across main, secondary and background content; active-state changes no longer alter glyph metrics or wrapping
-- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, line-layout, background-motion, line-scale, opacity, continuous-mask, responsive-padding, behavior-flag, transform-policy and typography unit tests
+- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, end-of-song, line-layout, background-motion, line-scale, opacity, continuous-mask, responsive-padding, behavior-flag, transform-policy and typography unit tests
 
-The renderer is still evolving. Remaining fidelity work includes pixel-identical CSS-style text-shadow blur/glow, deeper ruby/roman annotation-mask parity, end-of-song/bottom-line focus behavior once the host exposes a reliable media duration/end signal, additional upstream configuration parity where useful, and platform-specific performance tuning.
+The renderer is still evolving. Remaining fidelity work includes pixel-identical CSS-style text-shadow blur/glow, deeper ruby/roman annotation-mask parity, additional upstream configuration parity where useful, and platform-specific performance tuning.
 
 ## Non-goals for the first milestone
 
@@ -74,7 +78,7 @@ The renderer is still evolving. Remaining fidelity work includes pixel-identical
 
 ## Usage
 
-完整中文接入文档见 [`docs/USAGE.zh-CN.md`](docs/USAGE.zh-CN.md)，包括 Gradle 引入、YAQMC DTO adapter、播放状态同步、背景人声/对唱、样式配置和完整 Compose 示例。
+完整中文接入文档见 [`docs/USAGE.zh-CN.md`](docs/USAGE.zh-CN.md)，包括 Gradle 引入、YAQMC DTO adapter、播放状态同步、背景人声/对唱、曲末底栏、样式配置和完整 Compose 示例。
 
 ```kotlin
 val state = remember { AMLLPlayerState() }
@@ -97,8 +101,13 @@ AMLLPlayer(
         player.seekTo(line.startTimeMs)
         state.seekTo(line.startTimeMs)
     },
+    bottomLine = {
+        Text("Lyrics by …")
+    },
 )
 ```
+
+The renderer derives end-of-song from lyric-group timing, so the host does not need to provide a separate media duration/end signal for bottom-line focus.
 
 ## Model
 
