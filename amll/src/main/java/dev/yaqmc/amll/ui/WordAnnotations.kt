@@ -1,30 +1,20 @@
 package dev.yaqmc.amll.ui
 
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
-import dev.yaqmc.amll.model.LyricRuby
 import dev.yaqmc.amll.model.LyricWord
-import kotlin.math.max
-import kotlin.math.min
-
-internal data class AnnotationRange(
-    val start: Int,
-    val endExclusive: Int,
-    val timing: LyricRuby,
-)
 
 internal data class WordAnnotationLayout(
     val roman: TextLayoutResult? = null,
     val romanHasVisibleText: Boolean = false,
     val ruby: TextLayoutResult? = null,
-    val rubyRanges: List<AnnotationRange> = emptyList(),
 )
 
 internal fun measureWordAnnotations(
@@ -59,45 +49,46 @@ internal fun measureWordAnnotations(
             null
         }
 
-        var offset = 0
-        val ranges = rubySegments.map { segment ->
-            val start = offset
-            offset += segment.text.length
-            AnnotationRange(start, offset, segment)
-        }
-
         WordAnnotationLayout(
             roman = romanLayout,
             romanHasVisibleText = romanText.isNotEmpty(),
             ruby = rubyLayout,
-            rubyRanges = ranges,
         )
     }
 }
 
+/**
+ * Draws ruby and per-word romanization under the same word-level mask as the base glyphs.
+ *
+ * Upstream applies `mask-image` to `mainWordEl`, whose descendants contain ruby, the base word and
+ * romanization. The annotation layers therefore do not have independent highlight progress; they
+ * sample the exact same horizontal bright-to-dark boundary as the base word.
+ */
 internal fun DrawScope.drawWordAnnotations(
-    word: LyricWord,
     layout: WordAnnotationLayout,
     baseBounds: Rect,
     baseTranslateX: Float,
     baseTranslateY: Float,
     wordTranslateY: Float,
-    annotationGapPx: Float,
-    positionMs: Long,
-    active: Boolean,
+    romanEndPaddingPx: Float,
+    wordMask: WordMaskGradientPx?,
     activeColor: Color,
     inactiveColor: Color,
 ) {
+    val centerX = baseBounds.center.x + baseTranslateX
+
     layout.ruby?.let { ruby ->
-        val left = baseBounds.center.x + baseTranslateX - ruby.size.width / 2f
-        val top = baseBounds.top + baseTranslateY - annotationGapPx - ruby.size.height
-        drawRubyAnnotation(
+        val left = resolveCenteredAnnotationLeftPx(
+            centerXPx = centerX,
+            contentWidthPx = ruby.size.width.toFloat(),
+        )
+        val top = baseBounds.top + baseTranslateY - ruby.size.height
+        drawMaskedAnnotation(
             layout = ruby,
-            ranges = layout.rubyRanges,
             left = left,
             top = top + wordTranslateY,
-            positionMs = positionMs,
-            active = active,
+            wordMask = wordMask,
+            wordMaskTranslateX = baseTranslateX,
             activeColor = activeColor,
             inactiveColor = inactiveColor,
         )
@@ -106,96 +97,50 @@ internal fun DrawScope.drawWordAnnotations(
     layout.roman?.let { roman ->
         // NBSP-only layouts reserve upstream's wordBody footprint/height but do not need a draw.
         if (!layout.romanHasVisibleText) return@let
-        val left = baseBounds.center.x + baseTranslateX - roman.size.width / 2f
-        val top = baseBounds.bottom + baseTranslateY + annotationGapPx
-        drawProgressAnnotation(
+        val left = resolveCenteredAnnotationLeftPx(
+            centerXPx = centerX,
+            contentWidthPx = roman.size.width.toFloat(),
+            endPaddingPx = romanEndPaddingPx,
+        )
+        val top = baseBounds.bottom + baseTranslateY
+        drawMaskedAnnotation(
             layout = roman,
             left = left,
             top = top + wordTranslateY,
-            progress = word.progressAt(positionMs),
-            active = active,
+            wordMask = wordMask,
+            wordMaskTranslateX = baseTranslateX,
             activeColor = activeColor,
             inactiveColor = inactiveColor,
         )
     }
 }
 
-private fun DrawScope.drawProgressAnnotation(
+private fun DrawScope.drawMaskedAnnotation(
     layout: TextLayoutResult,
     left: Float,
     top: Float,
-    progress: Float,
-    active: Boolean,
+    wordMask: WordMaskGradientPx?,
+    wordMaskTranslateX: Float,
     activeColor: Color,
     inactiveColor: Color,
 ) {
     withTransform({ translate(left, top) }) {
-        drawText(layout, color = inactiveColor)
-        if (!active || progress <= 0f) return@withTransform
-
-        clipRect(
-            left = 0f,
-            top = 0f,
-            right = layout.size.width * progress.coerceIn(0f, 1f),
-            bottom = layout.size.height.toFloat(),
-        ) {
-            drawText(layout, color = activeColor)
+        if (wordMask == null) {
+            drawText(layout, color = inactiveColor)
+            return@withTransform
         }
+
+        // The base-word mask is expressed in shared lyric-layout coordinates and then translated by
+        // baseTranslateX. Convert those endpoints into this annotation layout's local coordinates.
+        val localStartX = wordMask.fadeStartX + wordMaskTranslateX - left
+        val localEndX = wordMask.fadeEndX + wordMaskTranslateX - left
+        drawText(
+            layout,
+            brush = Brush.horizontalGradient(
+                colors = listOf(activeColor, inactiveColor),
+                startX = localStartX,
+                endX = localEndX,
+            ),
+        )
     }
-}
-
-private fun DrawScope.drawRubyAnnotation(
-    layout: TextLayoutResult,
-    ranges: List<AnnotationRange>,
-    left: Float,
-    top: Float,
-    positionMs: Long,
-    active: Boolean,
-    activeColor: Color,
-    inactiveColor: Color,
-) {
-    withTransform({ translate(left, top) }) {
-        drawText(layout, color = inactiveColor)
-        if (!active) return@withTransform
-
-        ranges.forEach { range ->
-            val progress = range.timing.progressAt(positionMs)
-            if (progress <= 0f || range.start >= range.endExclusive) return@forEach
-
-            val bounds = annotationRangeBounds(layout, range.start, range.endExclusive) ?: return@forEach
-            val highlightedRight = bounds.left + bounds.width * progress.coerceIn(0f, 1f)
-            clipRect(
-                left = bounds.left,
-                top = bounds.top,
-                right = highlightedRight,
-                bottom = bounds.bottom,
-            ) {
-                drawText(layout, color = activeColor)
-            }
-        }
-    }
-}
-
-private fun annotationRangeBounds(
-    layout: TextLayoutResult,
-    start: Int,
-    endExclusive: Int,
-): Rect? {
-    val textLength = layout.layoutInput.text.length
-    if (start >= endExclusive || start >= textLength) return null
-
-    var left = Float.POSITIVE_INFINITY
-    var top = Float.POSITIVE_INFINITY
-    var right = Float.NEGATIVE_INFINITY
-    var bottom = Float.NEGATIVE_INFINITY
-
-    for (offset in start until min(endExclusive, textLength)) {
-        val box = layout.getBoundingBox(offset)
-        left = min(left, box.left)
-        top = min(top, box.top)
-        right = max(right, box.right)
-        bottom = max(bottom, box.bottom)
-    }
-
-    return if (left.isFinite()) Rect(left, top, right, bottom) else null
 }

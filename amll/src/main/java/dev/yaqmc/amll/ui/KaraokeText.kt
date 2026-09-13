@@ -157,11 +157,10 @@ internal fun KaraokeText(
             )
         }
         val fontSizePx = with(density) { style.fontSize.toPx() }
-        val annotationGapPx = fontSizePx * 0.05f
-        val rubyHeightPx = annotations.maxOfOrNull { it.ruby?.size?.height ?: 0 }?.toFloat() ?: 0f
-        val romanHeightPx = annotations.maxOfOrNull { it.roman?.size?.height ?: 0 }?.toFloat() ?: 0f
-        val rubyReservePx = if (rubyHeightPx > 0f) rubyHeightPx + annotationGapPx else 0f
-        val romanReservePx = if (romanHeightPx > 0f) romanHeightPx + annotationGapPx else 0f
+        val rubyReservePx = annotations.maxOfOrNull { it.ruby?.size?.height ?: 0 }
+            ?.toFloat() ?: 0f
+        val romanReservePx = annotations.maxOfOrNull { it.roman?.size?.height ?: 0 }
+            ?.toFloat() ?: 0f
         val annotationRowExtraPx = rubyReservePx + romanReservePx
         val totalHeightPx = layout.size.height + layout.lineCount * annotationRowExtraPx
         val totalHeight = with(density) { totalHeightPx.toDp() }
@@ -187,6 +186,9 @@ internal fun KaraokeText(
                         layout = layout,
                         word = word,
                         wordOffset = balanced.wordOffsets.getOrElse(globalIndex) { 0 },
+                        wordBoxWidthPx = wordBoxWidthsPx.getOrElse(globalIndex) { 0f },
+                        rubyBandHeightPx = rubyReservePx,
+                        romanBandHeightPx = romanReservePx,
                         positionMs = positionMs,
                         fadeWidthFactor = fadeWidthEm,
                     )
@@ -253,15 +255,13 @@ internal fun KaraokeText(
 
                     geometry.bounds?.let { bounds ->
                         drawWordAnnotations(
-                            word = word,
                             layout = annotations.getOrElse(globalIndex) { WordAnnotationLayout() },
                             baseBounds = bounds,
                             baseTranslateX = baseTranslateX,
                             baseTranslateY = baseTranslateY,
                             wordTranslateY = wordMotion.translateYEm * fontSizePx,
-                            annotationGapPx = annotationGapPx,
-                            positionMs = positionMs,
-                            active = active,
+                            romanEndPaddingPx = romanEndPaddingPx,
+                            wordMask = geometry.mask,
                             activeColor = maskColors.bright,
                             inactiveColor = maskColors.dark,
                         )
@@ -418,6 +418,9 @@ private fun buildWordGeometry(
     layout: TextLayoutResult,
     word: LyricWord,
     wordOffset: Int,
+    wordBoxWidthPx: Float,
+    rubyBandHeightPx: Float,
+    romanBandHeightPx: Float,
     positionMs: Long,
     fadeWidthFactor: Float,
 ): WordGeometry {
@@ -427,12 +430,18 @@ private fun buildWordGeometry(
         range = LocalTextRange(0, word.text.length),
     )
     val mask = wordGeometry.bounds?.let { bounds ->
+        val measuredWordWidth = max(bounds.width, wordBoxWidthPx.coerceAtLeast(0f))
+        val measuredWordLeft = bounds.center.x - measuredWordWidth / 2f
+        val measuredWordHeight = resolveWordMaskContentHeightPx(
+            baseHeightPx = bounds.height,
+            rubyBandHeightPx = rubyBandHeightPx,
+            romanBandHeightPx = romanBandHeightPx,
+        )
         resolveWordMaskGradientPx(
-            wordLeftPx = bounds.left,
-            wordWidthPx = bounds.width,
-            wordHeightPx = bounds.height,
-            startTimeMs = word.startTimeMs,
-            endTimeMs = word.endTimeMs,
+            wordLeftPx = measuredWordLeft,
+            wordWidthPx = measuredWordWidth,
+            wordHeightPx = measuredWordHeight,
+            word = word,
             positionMs = positionMs,
             fadeWidthFactor = fadeWidthFactor,
         )
