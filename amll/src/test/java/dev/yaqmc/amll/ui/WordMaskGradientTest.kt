@@ -1,5 +1,7 @@
 package dev.yaqmc.amll.ui
 
+import dev.yaqmc.amll.model.LyricRuby
+import dev.yaqmc.amll.model.LyricWord
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -70,5 +72,49 @@ class WordMaskGradientTest {
         assertEquals(30f, before.fadeEndX, 0.0001f)
         assertEquals(110f, after.fadeStartX, 0.0001f)
         assertEquals(130f, after.fadeEndX, 0.0001f)
+    }
+
+    @Test fun rubyTimingDrivesWholeWordSweepAndHoldsAcrossSegmentGap() {
+        val word = LyricWord(
+            startTimeMs = 1_000L,
+            endTimeMs = 2_000L,
+            text = "東京",
+            ruby = listOf(
+                LyricRuby(1_000L, 1_300L, "とう"),
+                LyricRuby(1_500L, 2_000L, "きょう"),
+            ),
+        )
+
+        // Five UTF-16 ruby code units: the first two consume 40% of the measured word width.
+        assertEquals(0.20f, resolveWordMaskSweepProgress(word, 1_150L), 0.0001f)
+        assertEquals(0.40f, resolveWordMaskSweepProgress(word, 1_300L), 0.0001f)
+        assertEquals(0.40f, resolveWordMaskSweepProgress(word, 1_400L), 0.0001f)
+        assertEquals(0.70f, resolveWordMaskSweepProgress(word, 1_750L), 0.0001f)
+        assertEquals(1.00f, resolveWordMaskSweepProgress(word, 2_000L), 0.0001f)
+    }
+
+    @Test fun rubyTimingIsClampedToWordBoundsLikeUpstream() {
+        val word = LyricWord(
+            startTimeMs = 1_000L,
+            endTimeMs = 2_000L,
+            text = "愛",
+            ruby = listOf(LyricRuby(800L, 2_200L, "あい")),
+        )
+
+        assertEquals(0f, resolveWordMaskSweepProgress(word, 1_000L), 0.0001f)
+        assertEquals(0.5f, resolveWordMaskSweepProgress(word, 1_500L), 0.0001f)
+        assertEquals(1f, resolveWordMaskSweepProgress(word, 2_000L), 0.0001f)
+    }
+
+    @Test fun timingOutsideRubyWordStillKeepsFadeLeadInAndTail() {
+        val word = LyricWord(
+            startTimeMs = 1_000L,
+            endTimeMs = 2_000L,
+            text = "愛",
+            ruby = listOf(LyricRuby(1_000L, 2_000L, "あい")),
+        )
+
+        assertEquals(-0.5f, resolveWordMaskSweepProgress(word, 500L), 0.0001f)
+        assertEquals(1.5f, resolveWordMaskSweepProgress(word, 2_500L), 0.0001f)
     }
 }

@@ -28,6 +28,31 @@ internal fun resolveWordBoxWidthPx(
     return max(wordBody, rubyWidthPx?.coerceAtLeast(0f) ?: 0f)
 }
 
+/**
+ * Content height measured by upstream after removing the symmetric 1em hit-area padding.
+ * Ruby/base/roman are stacked directly with no extra gap in the DOM flex containers.
+ */
+internal fun resolveWordMaskContentHeightPx(
+    baseHeightPx: Float,
+    rubyBandHeightPx: Float,
+    romanBandHeightPx: Float,
+): Float = baseHeightPx.coerceAtLeast(0f) +
+    rubyBandHeightPx.coerceAtLeast(0f) +
+    romanBandHeightPx.coerceAtLeast(0f)
+
+/**
+ * Positions annotation text inside its centered DOM box.
+ *
+ * Romanization has `padding-inline-end: 0.3em`; the padded box is centered under the base word,
+ * therefore the visible text itself is shifted toward inline-start by half that padding.
+ */
+internal fun resolveCenteredAnnotationLeftPx(
+    centerXPx: Float,
+    contentWidthPx: Float,
+    endPaddingPx: Float = 0f,
+): Float = centerXPx -
+    (contentWidthPx.coerceAtLeast(0f) + endPaddingPx.coerceAtLeast(0f)) / 2f
+
 /** Sum child word-box widths for each indivisible render chunk. */
 internal fun resolveChunkWidthsPx(
     plan: RenderWordPlan,

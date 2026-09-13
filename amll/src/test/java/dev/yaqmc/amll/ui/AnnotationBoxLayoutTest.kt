@@ -29,6 +29,38 @@ class AnnotationBoxLayoutTest {
         )
     }
 
+    @Test fun maskHeightStacksRubyBaseAndRomanWithoutExtraGap() {
+        assertEquals(
+            68f,
+            resolveWordMaskContentHeightPx(
+                baseHeightPx = 40f,
+                rubyBandHeightPx = 14f,
+                romanBandHeightPx = 14f,
+            ),
+            0.001f,
+        )
+    }
+
+    @Test fun romanEndPaddingShiftsVisibleTextTowardInlineStart() {
+        assertEquals(
+            65f,
+            resolveCenteredAnnotationLeftPx(
+                centerXPx = 100f,
+                contentWidthPx = 60f,
+                endPaddingPx = 10f,
+            ),
+            0.001f,
+        )
+        assertEquals(
+            70f,
+            resolveCenteredAnnotationLeftPx(
+                centerXPx = 100f,
+                contentWidthPx = 60f,
+            ),
+            0.001f,
+        )
+    }
+
     @Test fun chunkWidthIsSumOfChildVisualBoxes() {
         val plan = RenderWordPlan(
             listOf(
