@@ -58,6 +58,7 @@ fun AMLLPlayer(
     modifier: Modifier = Modifier,
     style: AMLLStyle = AMLLStyle(),
     onLineClick: ((LyricLine) -> Unit)? = null,
+    bottomLine: (@Composable () -> Unit)? = null,
 ) {
     val listState = rememberLazyListState()
     val configuration = LocalConfiguration.current
@@ -101,7 +102,15 @@ fun AMLLPlayer(
     val groups = remember(state.lyricLines) { groupLyricLines(state.lyricLines) }
     val hasDuetLine = remember(groups) { groups.any { it.main.isDuet } }
     val interludes = remember(groups) { calculateInterludes(groups) }
-    val listItems = remember(groups, interludes) { buildLyricListItems(groups, interludes) }
+    val hasBottomLine = bottomLine != null
+    val listItems = remember(groups, interludes, hasBottomLine) {
+        buildLyricListItems(
+            groups = groups,
+            interludes = interludes,
+            includeBottomLine = hasBottomLine,
+        )
+    }
+    val isEndOfSong = isLyricTimelineEndOfSong(groups, state.positionMs)
 
     val activeLineIndex = state.activeLineIndex
     val activeGroupIndex = remember(groups, activeLineIndex) {
@@ -116,6 +125,8 @@ fun AMLLPlayer(
         items = listItems,
         activeGroupIndex = activeGroupIndex,
         activeInterlude = activeInterlude,
+        isEndOfSong = isEndOfSong,
+        hasBottomLine = hasBottomLine,
     )
     val focusIntervalMs = remember(groups, activeGroupIndex) {
         if (activeGroupIndex > 0 && activeGroupIndex < groups.size) {
@@ -162,6 +173,7 @@ fun AMLLPlayer(
         isSeeking = lastSeekPositionMs == state.positionMs,
         isInterludeActive = activeInterlude != null,
         intervalMs = focusIntervalMs,
+        isEndOfSong = isEndOfSong,
     )
 
     var autoAlignSuspended by remember { mutableStateOf(false) }
@@ -207,6 +219,7 @@ fun AMLLPlayer(
         autoAlignSuspended,
         focusIntervalMs,
         activeInterlude,
+        isEndOfSong,
         seekEpoch,
         measuredViewportHeightPx,
         beforePaddingPx,
@@ -370,7 +383,8 @@ fun AMLLPlayer(
                 is LyricListItem.Group -> {
                     val groupIndex = item.groupIndex
                     val group = item.group
-                    val active = activeInterlude == null && groupIndex == activeGroupIndex
+                    val active =
+                        !isEndOfSong && activeInterlude == null && groupIndex == activeGroupIndex
                     val isPassed = groupIndex < passedBoundary
                     val targetAlpha = if (
                         style.hidePassedLines && state.isPlaying && isPassed
@@ -418,6 +432,39 @@ fun AMLLPlayer(
                         blurRadiusPx = blurRadiusPx,
                         onLineClick = onLineClick,
                     )
+                }
+
+                LyricListItem.BottomLine -> {
+                    bottomLine?.let { content ->
+                        val blurScrollToIndex = when {
+                            activeInterlude != null -> {
+                                (activeInterlude.anchorGroupIndex + 1)
+                                    .coerceIn(0, groups.lastIndex)
+                            }
+                            activeGroupIndex >= 0 -> activeGroupIndex
+                            else -> 0
+                        }
+                        val latestHighlightedIndex = when {
+                            activeInterlude != null -> activeInterlude.anchorGroupIndex
+                            activeGroupIndex >= 0 -> activeGroupIndex
+                            else -> 0
+                        }
+                        val blurRadiusPx = resolveBlurRadiusPx(
+                            index = groups.size,
+                            scrollToIndex = blurScrollToIndex,
+                            latestHighlightedIndex = latestHighlightedIndex,
+                            isFocused = isEndOfSong,
+                            autoAlignSuspended = autoAlignSuspended,
+                            isNarrowViewport = isNarrowViewport,
+                            enabled = style.enableBlur,
+                        )
+                        AMLLBottomLine(
+                            focused = isEndOfSong,
+                            blurRadiusPx = blurRadiusPx,
+                            style = style,
+                            content = content,
+                        )
+                    }
                 }
             }
         }
