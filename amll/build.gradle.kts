@@ -1,15 +1,24 @@
 plugins {
     id("com.android.library")
+    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     `maven-publish`
 }
 
 android {
     namespace = "dev.yaqmc.amll"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+    kotlinOptions {
+        jvmTarget = "21"
     }
 
     buildFeatures {
@@ -24,11 +33,18 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2026.08.00")
-    implementation(composeBom)
-    implementation("androidx.compose.runtime:runtime")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-text")
+    // Compose 1.12+ requires compileSdk 37 / AGP 9. Keep the library on the latest
+    // SDK-36-compatible BOM so its published AAR can be consumed by the YAQMC Android host.
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
+
+    // These Compose types are part of the public AMLL API (`@Composable`, Modifier, Color,
+    // TextUnit and FontWeight), so consumers of the published AAR need them on compile classpaths.
+    api(composeBom)
+    api("androidx.compose.runtime:runtime")
+    api("androidx.compose.ui:ui")
+    api("androidx.compose.ui:ui-text")
+
+    // Renderer-only implementation details stay private to avoid widening the host API surface.
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.animation:animation")

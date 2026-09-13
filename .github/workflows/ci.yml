@@ -18,6 +18,13 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 9.6.0
-      - name: Build and test
-        run: gradle :amll:testDebugUnitTest :amll:assembleRelease :demo:assembleDebug
+          gradle-version: 8.14.3
+      - name: Build, test, and publish local artifact
+        run: >-
+          gradle
+          :amll:testDebugUnitTest
+          :amll:assembleRelease
+          :amll:publishReleasePublicationToMavenLocal
+          :demo:assembleDebug
+      - name: Compile published artifact as YAQMC-style consumer
+        run: gradle -p integration/consumer-smoke assembleDebug
