@@ -9,12 +9,18 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.unit.IntSize
 import dev.yaqmc.amll.model.LyricWord
+
+internal data class RubyAnnotationLayout(
+    val segments: List<TextLayoutResult>,
+    val size: IntSize,
+)
 
 internal data class WordAnnotationLayout(
     val roman: TextLayoutResult? = null,
     val romanHasVisibleText: Boolean = false,
-    val ruby: TextLayoutResult? = null,
+    val ruby: RubyAnnotationLayout? = null,
 )
 
 internal fun measureWordAnnotations(
@@ -39,12 +45,31 @@ internal fun measureWordAnnotations(
             null
         }
 
-        val rubySegments = if (hasRubyLine) word.ruby.filter { it.text.isNotBlank() } else emptyList()
-        val rubyText = buildString {
-            rubySegments.forEach { append(it.text) }
+        val rubyLayouts = if (hasRubyLine) {
+            word.ruby
+                .filter { it.text.isNotBlank() }
+                .map { ruby ->
+                    // Upstream emits one child <span> per ruby segment inside a flex row. Keep each
+                    // segment as an independent TextLayoutResult so shaping/kerning never crosses a
+                    // segment boundary and the row width is the sum of child boxes, like the DOM.
+                    measurer.measure(
+                        text = ruby.text,
+                        style = annotationStyle,
+                        softWrap = false,
+                        maxLines = 1,
+                    )
+                }
+        } else {
+            emptyList()
         }
-        val rubyLayout = if (rubyText.isNotEmpty()) {
-            measurer.measure(text = rubyText, style = annotationStyle)
+        val rubyLayout = if (rubyLayouts.isNotEmpty()) {
+            RubyAnnotationLayout(
+                segments = rubyLayouts,
+                size = IntSize(
+                    width = rubyLayouts.sumOf { it.size.width },
+                    height = rubyLayouts.maxOf { it.size.height },
+                ),
+            )
         } else {
             null
         }
@@ -78,20 +103,23 @@ internal fun DrawScope.drawWordAnnotations(
     val centerX = baseBounds.center.x + baseTranslateX
 
     layout.ruby?.let { ruby ->
-        val left = resolveCenteredAnnotationLeftPx(
+        val widths = ruby.segments.map { it.size.width.toFloat() }
+        val leftOffsets = resolveRubySegmentLeftOffsetsPx(
             centerXPx = centerX,
-            contentWidthPx = ruby.size.width.toFloat(),
+            segmentWidthsPx = widths,
         )
-        val top = baseBounds.top + baseTranslateY - ruby.size.height
-        drawMaskedAnnotation(
-            layout = ruby,
-            left = left,
-            top = top + wordTranslateY,
-            wordMask = wordMask,
-            wordMaskTranslateX = baseTranslateX,
-            activeColor = activeColor,
-            inactiveColor = inactiveColor,
-        )
+        val top = baseBounds.top + baseTranslateY - ruby.size.height + wordTranslateY
+        ruby.segments.forEachIndexed { index, rubySegment ->
+            drawMaskedAnnotation(
+                layout = rubySegment,
+                left = leftOffsets[index],
+                top = top,
+                wordMask = wordMask,
+                wordMaskTranslateX = baseTranslateX,
+                activeColor = activeColor,
+                inactiveColor = inactiveColor,
+            )
+        }
     }
 
     layout.roman?.let { roman ->

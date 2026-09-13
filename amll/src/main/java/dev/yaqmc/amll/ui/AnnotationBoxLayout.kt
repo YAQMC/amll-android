@@ -28,6 +28,29 @@ internal fun resolveWordBoxWidthPx(
     return max(wordBody, rubyWidthPx?.coerceAtLeast(0f) ?: 0f)
 }
 
+/** Upstream `.rubyWord` is a flex row, so its width is the sum of independent child spans. */
+internal fun resolveRubyRowWidthPx(segmentWidthsPx: List<Float>): Float =
+    segmentWidthsPx.sumOf { it.coerceAtLeast(0f).toDouble() }.toFloat()
+
+/**
+ * Returns each ruby segment's left edge for a centered flex row.
+ *
+ * Keeping these boxes independent prevents kerning/shaping from crossing ruby segment boundaries,
+ * matching upstream's one-`<span>`-per-segment DOM structure.
+ */
+internal fun resolveRubySegmentLeftOffsetsPx(
+    centerXPx: Float,
+    segmentWidthsPx: List<Float>,
+): FloatArray {
+    val safeWidths = segmentWidthsPx.map { it.coerceAtLeast(0f) }
+    var cursor = centerXPx - resolveRubyRowWidthPx(safeWidths) / 2f
+    return FloatArray(safeWidths.size) { index ->
+        val left = cursor
+        cursor += safeWidths[index]
+        left
+    }
+}
+
 /**
  * Content height measured by upstream after removing the symmetric 1em hit-area padding.
  * Ruby/base/roman are stacked directly with no extra gap in the DOM flex containers.

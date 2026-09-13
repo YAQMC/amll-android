@@ -29,6 +29,22 @@ class AnnotationBoxLayoutTest {
         )
     }
 
+    @Test fun rubyFlexRowWidthIsSumOfIndependentSegments() {
+        assertEquals(42f, resolveRubyRowWidthPx(listOf(12f, 20f, 10f)), 0.001f)
+        assertEquals(12f, resolveRubyRowWidthPx(listOf(12f, -8f)), 0.001f)
+    }
+
+    @Test fun rubySegmentsArePlacedAsOneCenteredFlexRow() {
+        assertArrayEquals(
+            floatArrayOf(79f, 91f, 111f),
+            resolveRubySegmentLeftOffsetsPx(
+                centerXPx = 100f,
+                segmentWidthsPx = listOf(12f, 20f, 10f),
+            ),
+            0.001f,
+        )
+    }
+
     @Test fun maskHeightStacksRubyBaseAndRomanWithoutExtraGap() {
         assertEquals(
             68f,
