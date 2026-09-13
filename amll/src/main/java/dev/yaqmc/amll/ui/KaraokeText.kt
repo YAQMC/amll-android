@@ -12,6 +12,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -80,6 +81,22 @@ internal fun KaraokeText(
                     softWrap = false,
                     maxLines = 1,
                 ).size.width.toFloat()
+            }
+        }
+    }
+    val characterShadowLayouts = remember(renderWords, style, measurer) {
+        renderWords.map { word ->
+            graphemeRanges(word.text).map { range ->
+                val characterLayout = measurer.measure(
+                    text = word.text.substring(range.start, range.endExclusive),
+                    style = style,
+                    softWrap = false,
+                    maxLines = 1,
+                )
+                CharacterShadowLayout(
+                    layout = characterLayout,
+                    inkBounds = textLayoutInkBounds(characterLayout),
+                )
             }
         }
     }
@@ -208,6 +225,9 @@ internal fun KaraokeText(
                             drawCharacter(
                                 layout = layout,
                                 geometry = character,
+                                shadowLayout = characterShadowLayouts
+                                    .getOrNull(globalIndex)
+                                    ?.getOrNull(localCharacterIndex),
                                 wordMask = geometry.mask,
                                 wordMotion = wordMotion,
                                 characterMotion = characterMotion,
@@ -265,6 +285,11 @@ private data class CharacterGeometry(
     val bounds: Rect,
 )
 
+private data class CharacterShadowLayout(
+    val layout: TextLayoutResult,
+    val inkBounds: Rect?,
+)
+
 private data class WordGeometry(
     val full: Path,
     val bounds: Rect?,
@@ -304,6 +329,7 @@ private fun DrawScope.drawWord(
 private fun DrawScope.drawCharacter(
     layout: TextLayoutResult,
     geometry: CharacterGeometry,
+    shadowLayout: CharacterShadowLayout?,
     wordMask: WordMaskGradientPx?,
     wordMotion: WordMotion,
     characterMotion: CharacterMotion,
@@ -318,32 +344,31 @@ private fun DrawScope.drawCharacter(
         (wordMotion.translateYEm + characterMotion.translateYEm) * fontSizePx
     val pivot = geometry.bounds.center
 
-    if (characterMotion.glowAlpha > 0.001f && characterMotion.glowRadiusEm > 0f) {
-        val radiusPx = characterMotion.glowRadiusEm * fontSizePx * 0.22f
-        val haloAlpha = activeColor.alpha * characterMotion.glowAlpha
-        val haloScale = characterMotion.scale + characterMotion.glowRadiusEm * 0.025f
-        val offsets = arrayOf(
-            Offset.Zero,
-            Offset(radiusPx, 0f),
-            Offset(-radiusPx, 0f),
-            Offset(0f, radiusPx),
-            Offset(0f, -radiusPx),
+    val shadowSpec = resolveCharacterTextShadowSpec(characterMotion, fontSizePx)
+    val localInkBounds = shadowLayout?.inkBounds
+    if (shadowSpec != null && shadowLayout != null && localInkBounds != null) {
+        val shadowTopLeft = Offset(
+            x = geometry.bounds.left - localInkBounds.left,
+            y = geometry.bounds.top - localInkBounds.top,
         )
-
-        offsets.forEachIndexed { index, offset ->
-            withTransform({
-                translate(left = xOffset + offset.x, top = yOffset + offset.y)
-                scale(scaleX = haloScale, scaleY = haloScale, pivot = pivot)
-            }) {
-                clipPath(geometry.full) {
-                    drawText(
-                        layout,
-                        color = activeColor.copy(
-                            alpha = haloAlpha * if (index == 0) 0.18f else 0.10f,
-                        ),
-                    )
-                }
-            }
+        withTransform({
+            translate(left = xOffset, top = yOffset)
+            scale(
+                scaleX = characterMotion.scale,
+                scaleY = characterMotion.scale,
+                pivot = pivot,
+            )
+        }) {
+            drawText(
+                textLayoutResult = shadowLayout.layout,
+                color = Color.Transparent,
+                topLeft = shadowTopLeft,
+                shadow = Shadow(
+                    color = Color.White.copy(alpha = shadowSpec.alpha),
+                    offset = Offset.Zero,
+                    blurRadius = shadowSpec.blurRadiusPx,
+                ),
+            )
         }
     }
 
@@ -473,6 +498,30 @@ private fun buildGeometryRange(
         null
     }
     return RangeGeometry(full, bounds)
+}
+
+private fun textLayoutInkBounds(layout: TextLayoutResult): Rect? {
+    val textLength = layout.layoutInput.text.length
+    if (textLength <= 0) return null
+
+    var minLeft = Float.POSITIVE_INFINITY
+    var minTop = Float.POSITIVE_INFINITY
+    var maxRight = Float.NEGATIVE_INFINITY
+    var maxBottom = Float.NEGATIVE_INFINITY
+
+    for (index in 0 until textLength) {
+        val box = layout.getBoundingBox(index)
+        minLeft = min(minLeft, box.left)
+        minTop = min(minTop, box.top)
+        maxRight = max(maxRight, box.right)
+        maxBottom = max(maxBottom, box.bottom)
+    }
+
+    return if (minLeft.isFinite()) {
+        Rect(minLeft, minTop, maxRight, maxBottom)
+    } else {
+        null
+    }
 }
 
 private fun graphemeRanges(text: String): List<LocalTextRange> {
