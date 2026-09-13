@@ -23,7 +23,7 @@ Android-native Apple Music-like lyric renderer for YAQMC.
 
 ## Current replication status
 
-The first twenty-nine AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity, mask, responsive-wrapper, playback-control and end-of-song behavior instead of relying on generic Compose defaults:
+The first thirty AMLL-parity passes now cover the main timing, annotation, interaction, focus-motion, measured layout, background-vocal geometry, line-transform, group-opacity, mask, responsive-wrapper, playback-control, end-of-song and emphasized-shadow behavior instead of relying on generic Compose defaults:
 
 - active/inactive main-line scale follows AMLL's `1.0 / 0.97` behavior using the upstream physical scale spring
 - `enableScale` mirrors upstream `setEnableScale()` and disables only the main-line 97% treatment; background-vocal 75% inactive scale remains independent
@@ -41,7 +41,8 @@ The first twenty-nine AMLL-parity passes now cover the main timing, annotation, 
 - every word keeps AMLL's regular playback-time-derived upward float, including emphasized words
 - long-word emphasis uses AMLL's eligibility, duration mapping, two-half easing, final-word amplification and grapheme stagger
 - emphasized graphemes reproduce AMLL's horizontal push, vertical lift, scale and duration-derived glow envelope
-- Android 8-30 use a native multi-sample glow approximation where API-31-only effects are unavailable
+- emphasized grapheme glow uses a zero-offset native text shadow with the upstream white color, direct `emphasis * blur` alpha and direct `min(0.3, blur * 0.3)em` blur radius; the renderer no longer adds halo scaling or extra alpha/radius attenuation
+- the shadow is rendered per grapheme on Android 8+ without depending on API-31-only `RenderEffect`, while the existing karaoke bright/dark mask path remains unchanged
 - ruby annotations and per-word romanization participate in merged word layout and ruby character count drives AMLL emphasis stagger anchors
 - annotation layout reserves explicit above-baseline space so ruby/romanized text does not distort main-word timing geometry
 - word/character motion is reconstructed directly from media time, so seeking is deterministic rather than free-running
@@ -66,9 +67,9 @@ The first twenty-nine AMLL-parity passes now cover the main timing, annotation, 
 - secondary lyric defaults follow AMLL's `0.5em` font, `0.75em` total line-height and 0.3 opacity hierarchy
 - songs containing duet lines measure each speaker at 85% content width on the correct side, so wrapping and group height follow AMLL's 15% opposite-speaker inset
 - lyric typography uses the react-full default weight 600 consistently across main, secondary and background content; active-state changes no longer alter glyph metrics or wrapping
-- CI builds the library/demo and runs native grouping, word-motion, annotation, interlude, interaction, spring, seek, focus-geometry, end-of-song, line-layout, background-motion, line-scale, opacity, continuous-mask, responsive-padding, behavior-flag, transform-policy and typography unit tests
+- CI builds the library/demo and runs native grouping, word-motion, text-shadow, annotation, interlude, interaction, spring, seek, focus-geometry, end-of-song, line-layout, background-motion, line-scale, opacity, continuous-mask, responsive-padding, behavior-flag, transform-policy and typography unit tests
 
-The renderer is still evolving. Remaining fidelity work includes pixel-identical CSS-style text-shadow blur/glow, deeper ruby/roman annotation-mask parity, additional upstream configuration parity where useful, and platform-specific performance tuning.
+The renderer is still evolving. Remaining fidelity work includes browser-CSS versus Android/Skia shadow-kernel rasterization differences, deeper ruby/roman annotation-mask parity, additional upstream configuration parity where useful, and platform-specific performance tuning.
 
 ## Non-goals for the first milestone
 
