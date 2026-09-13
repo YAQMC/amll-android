@@ -53,6 +53,15 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
+val publicationVersion =
+    providers.environmentVariable("AMLL_VERSION")
+        .orElse(providers.gradleProperty("amllVersion"))
+        .orElse("0.1.0-SNAPSHOT")
+        .map { it.removePrefix("v") }
+
+val githubActor = providers.environmentVariable("GITHUB_ACTOR")
+val githubToken = providers.environmentVariable("GITHUB_TOKEN")
+
 afterEvaluate {
     publishing {
         publications {
@@ -60,7 +69,22 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "dev.yaqmc"
                 artifactId = "amll-android"
-                version = "0.1.0-SNAPSHOT"
+                version = publicationVersion.get()
+            }
+        }
+
+        // Keep ordinary local/PR builds credential-free. GitHub Packages is only registered when
+        // both credentials are present, which GitHub Actions supplies in the publish workflow.
+        if (githubActor.isPresent && githubToken.isPresent) {
+            repositories {
+                maven {
+                    name = "GitHubPackages"
+                    url = uri("https://maven.pkg.github.com/YAQMC/amll-android")
+                    credentials {
+                        username = githubActor.get()
+                        password = githubToken.get()
+                    }
+                }
             }
         }
     }
