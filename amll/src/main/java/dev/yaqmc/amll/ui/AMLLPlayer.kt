@@ -60,6 +60,7 @@ fun AMLLPlayer(
     onLineClick: ((LyricLine) -> Unit)? = null,
     bottomLine: (@Composable () -> Unit)? = null,
 ) {
+    if (AmllRenderStats.enabled) AmllRenderStats.playerCompositions++
     val listState = rememberLazyListState()
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
@@ -163,6 +164,7 @@ fun AMLLPlayer(
             }
 
             if (explicitSeek || detectedSeek) {
+                if (AmllRenderStats.enabled) AmllRenderStats.seekEpochs++
                 lastSeekPositionMs = sample.positionMs
                 seekEpoch += 1
             }
@@ -484,6 +486,7 @@ private fun LyricGroup(
     blurRadiusPx: Float,
     onLineClick: ((LyricLine) -> Unit)?,
 ) {
+    if (AmllRenderStats.enabled) AmllRenderStats.groupCompositions++
     val main = group.main
     val mainAlignment = if (main.isDuet) Alignment.End else Alignment.Start
     val mainTextAlign = if (main.isDuet) TextAlign.End else TextAlign.Start

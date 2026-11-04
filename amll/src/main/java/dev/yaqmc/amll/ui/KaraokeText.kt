@@ -44,6 +44,7 @@ internal fun KaraokeText(
     minimumHeight: Dp = 48.dp,
     fadeWidthEm: Float = 1f,
 ) {
+    if (AmllRenderStats.enabled) AmllRenderStats.karaokeCompositions++
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val solidColor = inactiveColor.copy(
@@ -170,6 +171,7 @@ internal fun KaraokeText(
                 .fillMaxWidth()
                 .height(max(minimumHeight.value, totalHeight.value).dp)
         ) {
+            if (AmllRenderStats.enabled) AmllRenderStats.karaokeDraws++
             if (renderWords.isEmpty() || balanced.text.isEmpty()) {
                 withTransform({ translate(top = rubyReservePx) }) {
                     drawText(layout, color = maskColors.dark)

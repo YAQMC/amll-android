@@ -25,6 +25,20 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests {
+            // Robolectric renders real Compose content for the render/perf harness.
+            isIncludeAndroidResources = true
+            all { test ->
+                // The perf harness is opt-in: ./gradlew :amll:testDebugUnitTest -Pamll.perf=true
+                test.systemProperty("amll.perf", project.findProperty("amll.perf") ?: "false")
+                test.systemProperty("amll.perf.label", project.findProperty("amll.perf.label") ?: "local")
+                test.systemProperty("amll.perf.out", layout.buildDirectory.dir("perf").get().asFile.path)
+                test.maxHeapSize = "2g"
+            }
+        }
+    }
+
     publishing {
         singleVariant("release") {
             withSourcesJar()
@@ -51,6 +65,9 @@ dependencies {
     implementation("androidx.compose.animation:animation-core")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 val publicationVersion =
