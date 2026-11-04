@@ -24,6 +24,23 @@ android {
         jvmTarget = "21"
     }
 
+    buildTypes {
+        // Release-equivalent build for on-device frame measurement: R8, non-debuggable Compose,
+        // profileable by shell, debug-signed, installs beside the debug demo.
+        create("benchmark") {
+            initWith(getByName("release"))
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".benchmark"
+            isDebuggable = false
+            isProfileable = true
+            matchingFallbacks += listOf("release")
+        }
+    }
+
+    sourceSets["main"].java.srcDir("../perf-fixtures/src")
+
     buildFeatures {
         compose = true
     }

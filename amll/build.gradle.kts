@@ -25,6 +25,9 @@ android {
         compose = true
     }
 
+    // Deterministic lyric fixtures shared by the JVM render harness and the demo benchmark mode.
+    sourceSets["test"].java.srcDir("../perf-fixtures/src")
+
     testOptions {
         unitTests {
             // Robolectric renders real Compose content for the render/perf harness.

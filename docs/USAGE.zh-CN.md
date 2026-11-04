@@ -244,6 +244,8 @@ state.updateAutoSeekDetectionEnabled(true)
 
 关闭后，普通 position sample 不再进入自动 drift detector；明确调用 `seekTo()` 仍始终使用 seek-motion 语义。
 
+与 upstream AMLL 一致：media time 倒退总是 seek；向前跳跃超过 wall clock 加容差时才是 seek；重复的相同 sample 永远不是 seek。暂停、缓冲或时钟粒度较粗时重复推送相同的 position 是安全的：相同的 sample 只会刷新内部 wall-clock 基准，不会触发 seek 动画，也不会让 player 重新 compose。
+
 renderer 的运动由 media time 重建，不维护一个与播放器脱离的“自由运行歌词时钟”。因此 seek/pause/resume 后可以确定性恢复视觉状态。
 
 ## 7. Obscene word masking
