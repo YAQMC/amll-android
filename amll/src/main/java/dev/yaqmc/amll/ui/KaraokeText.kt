@@ -35,7 +35,7 @@ import kotlin.math.min
 @Composable
 internal fun KaraokeText(
     line: LyricLine,
-    positionMs: Long,
+    positionMs: () -> Long,
     style: TextStyle,
     active: Boolean,
     activeColor: Color,
@@ -85,8 +85,12 @@ internal fun KaraokeText(
             }
         }
     }
-    val characterShadowLayouts = remember(renderWords, style, measurer) {
-        renderWords.map { word ->
+    // Per-grapheme shadow layouts are only drawn for emphasized chunks; measuring them for every
+    // word made each line's first composition (e.g. scrolling into view) needlessly expensive.
+    val emphasizedWordIndices = remember(renderPlan) { emphasizedWordIndices(renderPlan) }
+    val characterShadowLayouts = remember(renderWords, style, measurer, emphasizedWordIndices) {
+        renderWords.mapIndexed { wordIndex, word ->
+            if (wordIndex !in emphasizedWordIndices) return@mapIndexed emptyList()
             graphemeRanges(word.text).map { range ->
                 val characterLayout = measurer.measure(
                     text = word.text.substring(range.start, range.endExclusive),
@@ -163,6 +167,27 @@ internal fun KaraokeText(
         val romanReservePx = annotations.maxOfOrNull { it.roman?.size?.height ?: 0 }
             ?.toFloat() ?: 0f
         val annotationRowExtraPx = rubyReservePx + romanReservePx
+        // Glyph boxes, clip paths, grapheme ranges and mask extents depend only on the shaped text
+        // and measured boxes, never on playback time. Built once per layout instead of per frame.
+        // Keys cover every input; `layout` already captures text, style, width and the measurer
+        // (density, font scale, font family resolver). Owned by this composition and released with it.
+        val lineGeometry = remember(
+            layout,
+            renderPlan,
+            balanced,
+            wordBoxWidthsPx,
+            rubyReservePx,
+            romanReservePx,
+        ) {
+            buildLineGeometry(
+                layout = layout,
+                plan = renderPlan,
+                wordOffsets = balanced.wordOffsets,
+                wordBoxWidthsPx = wordBoxWidthsPx,
+                rubyBandHeightPx = rubyReservePx,
+                romanBandHeightPx = romanReservePx,
+            )
+        }
         val totalHeightPx = layout.size.height + layout.lineCount * annotationRowExtraPx
         val totalHeight = with(density) { totalHeightPx.toDp() }
 
@@ -172,6 +197,14 @@ internal fun KaraokeText(
                 .height(max(minimumHeight.value, totalHeight.value).dp)
         ) {
             if (AmllRenderStats.enabled) AmllRenderStats.karaokeDraws++
+            // Reading the clock subscribes this draw to every position change. A settled inactive
+            // line paints both mask stops in the same solid color, so its pixels do not depend on
+            // time: skip the read and the line is neither recomposed nor redrawn on clock ticks.
+            val positionMs = if (active || maskColors.bright != maskColors.dark) {
+                positionMs()
+            } else {
+                line.startTimeMs
+            }
             if (renderWords.isEmpty() || balanced.text.isEmpty()) {
                 withTransform({ translate(top = rubyReservePx) }) {
                     drawText(layout, color = maskColors.dark)
@@ -182,27 +215,14 @@ internal fun KaraokeText(
             var atomIndex = 0
             renderPlan.chunks.forEachIndexed { chunkIndex, chunk ->
                 val chunkStartAtom = atomIndex
-                val geometries = chunk.words.mapIndexed { localIndex, word ->
-                    val globalIndex = chunkStartAtom + localIndex
-                    buildWordGeometry(
-                        layout = layout,
-                        word = word,
-                        wordOffset = balanced.wordOffsets.getOrElse(globalIndex) { 0 },
-                        wordBoxWidthPx = wordBoxWidthsPx.getOrElse(globalIndex) { 0f },
-                        rubyBandHeightPx = rubyReservePx,
-                        romanBandHeightPx = romanReservePx,
-                        positionMs = positionMs,
-                        fadeWidthFactor = fadeWidthEm,
-                    )
-                }
-                val totalChunkCharacters = geometries.sumOf { it.characters.size }
+                val totalChunkCharacters = lineGeometry.chunkCharacterCounts[chunkIndex]
                 var chunkCharacterIndex = 0
 
                 chunk.words.forEachIndexed { localIndex, word ->
                     val globalIndex = chunkStartAtom + localIndex
-                    val geometry = geometries[localIndex]
-                    val wordOffset = balanced.wordOffsets.getOrElse(globalIndex) { 0 }
-                    val lineIndex = lineIndexForOffset(layout, wordOffset)
+                    val geometry = lineGeometry.words[globalIndex]
+                    val mask = geometry.maskAt(word, positionMs, fadeWidthEm)
+                    val lineIndex = geometry.lineIndex
                     val baseTranslateX = wordBoxTranslationsPx.getOrElse(globalIndex) { 0f }
                     val baseTranslateY = rubyReservePx + lineIndex * annotationRowExtraPx
                     val wordMotion = if (active) {
@@ -232,7 +252,7 @@ internal fun KaraokeText(
                                 shadowLayout = characterShadowLayouts
                                     .getOrNull(globalIndex)
                                     ?.getOrNull(localCharacterIndex),
-                                wordMask = geometry.mask,
+                                wordMask = mask,
                                 wordMotion = wordMotion,
                                 characterMotion = characterMotion,
                                 fontSizePx = fontSizePx,
@@ -246,6 +266,7 @@ internal fun KaraokeText(
                         drawWord(
                             layout = layout,
                             geometry = geometry,
+                            mask = mask,
                             motion = wordMotion,
                             fontSizePx = fontSizePx,
                             baseTranslateX = baseTranslateX,
@@ -263,7 +284,7 @@ internal fun KaraokeText(
                             baseTranslateY = baseTranslateY,
                             wordTranslateY = wordMotion.translateYEm * fontSizePx,
                             romanEndPaddingPx = romanEndPaddingPx,
-                            wordMask = geometry.mask,
+                            wordMask = mask,
                             activeColor = maskColors.bright,
                             inactiveColor = maskColors.dark,
                         )
@@ -292,14 +313,38 @@ private data class CharacterShadowLayout(
     val inkBounds: Rect?,
 )
 
-private data class WordGeometry(
+/** Time-independent geometry for one render word, built once per text layout. */
+private class WordGeometry(
     val full: Path,
     val bounds: Rect?,
-    val mask: WordMaskGradientPx?,
     val characters: List<CharacterGeometry>,
+    val lineIndex: Int,
+    private val maskLeftPx: Float,
+    private val maskWidthPx: Float,
+    private val maskHeightPx: Float,
+) {
+    /** The only playback-dependent part of a word: where its fade currently sits. */
+    fun maskAt(word: LyricWord, positionMs: Long, fadeWidthFactor: Float): WordMaskGradientPx? =
+        if (bounds == null) {
+            null
+        } else {
+            resolveWordMaskGradientPx(
+                wordLeftPx = maskLeftPx,
+                wordWidthPx = maskWidthPx,
+                wordHeightPx = maskHeightPx,
+                word = word,
+                positionMs = positionMs,
+                fadeWidthFactor = fadeWidthFactor,
+            )
+        }
+}
+
+private class LineGeometry(
+    val words: List<WordGeometry>,
+    val chunkCharacterCounts: IntArray,
 )
 
-private data class LocalTextRange(
+internal data class LocalTextRange(
     val start: Int,
     val endExclusive: Int,
 )
@@ -307,6 +352,7 @@ private data class LocalTextRange(
 private fun DrawScope.drawWord(
     layout: TextLayoutResult,
     geometry: WordGeometry,
+    mask: WordMaskGradientPx?,
     motion: WordMotion,
     fontSizePx: Float,
     baseTranslateX: Float,
@@ -321,7 +367,7 @@ private fun DrawScope.drawWord(
         drawWordMask(
             layout = layout,
             path = geometry.full,
-            mask = geometry.mask,
+            mask = mask,
             brightColor = activeColor,
             darkColor = inactiveColor,
         )
@@ -425,6 +471,36 @@ private fun DrawScope.drawWordMask(
     }
 }
 
+private fun buildLineGeometry(
+    layout: TextLayoutResult,
+    plan: RenderWordPlan,
+    wordOffsets: IntArray,
+    wordBoxWidthsPx: List<Float>,
+    rubyBandHeightPx: Float,
+    romanBandHeightPx: Float,
+): LineGeometry {
+    val words = ArrayList<WordGeometry>(plan.words.size)
+    val chunkCharacterCounts = IntArray(plan.chunks.size)
+    plan.chunks.forEachIndexed { chunkIndex, chunk ->
+        var characters = 0
+        chunk.words.forEach { word ->
+            val globalIndex = words.size
+            val geometry = buildWordGeometry(
+                layout = layout,
+                word = word,
+                wordOffset = wordOffsets.getOrElse(globalIndex) { 0 },
+                wordBoxWidthPx = wordBoxWidthsPx.getOrElse(globalIndex) { 0f },
+                rubyBandHeightPx = rubyBandHeightPx,
+                romanBandHeightPx = romanBandHeightPx,
+            )
+            characters += geometry.characters.size
+            words += geometry
+        }
+        chunkCharacterCounts[chunkIndex] = characters
+    }
+    return LineGeometry(words, chunkCharacterCounts)
+}
+
 private fun buildWordGeometry(
     layout: TextLayoutResult,
     word: LyricWord,
@@ -432,29 +508,22 @@ private fun buildWordGeometry(
     wordBoxWidthPx: Float,
     rubyBandHeightPx: Float,
     romanBandHeightPx: Float,
-    positionMs: Long,
-    fadeWidthFactor: Float,
 ): WordGeometry {
     val wordGeometry = buildGeometryRange(
         layout = layout,
         wordOffset = wordOffset,
         range = LocalTextRange(0, word.text.length),
     )
-    val mask = wordGeometry.bounds?.let { bounds ->
-        val measuredWordWidth = max(bounds.width, wordBoxWidthPx.coerceAtLeast(0f))
-        val measuredWordLeft = bounds.center.x - measuredWordWidth / 2f
-        val measuredWordHeight = resolveWordMaskContentHeightPx(
+    val bounds = wordGeometry.bounds
+    val measuredWordWidth = if (bounds == null) 0f else max(bounds.width, wordBoxWidthPx.coerceAtLeast(0f))
+    val measuredWordLeft = if (bounds == null) 0f else bounds.center.x - measuredWordWidth / 2f
+    val measuredWordHeight = if (bounds == null) {
+        0f
+    } else {
+        resolveWordMaskContentHeightPx(
             baseHeightPx = bounds.height,
             rubyBandHeightPx = rubyBandHeightPx,
             romanBandHeightPx = romanBandHeightPx,
-        )
-        resolveWordMaskGradientPx(
-            wordLeftPx = measuredWordLeft,
-            wordWidthPx = measuredWordWidth,
-            wordHeightPx = measuredWordHeight,
-            word = word,
-            positionMs = positionMs,
-            fadeWidthFactor = fadeWidthFactor,
         )
     }
 
@@ -464,19 +533,32 @@ private fun buildWordGeometry(
             wordOffset = wordOffset,
             range = range,
         )
-        val bounds = geometry.bounds ?: return@mapNotNull null
+        val characterBounds = geometry.bounds ?: return@mapNotNull null
         CharacterGeometry(
             full = geometry.full,
-            bounds = bounds,
+            bounds = characterBounds,
         )
     }
 
     return WordGeometry(
         full = wordGeometry.full,
-        bounds = wordGeometry.bounds,
-        mask = mask,
+        bounds = bounds,
         characters = characters,
+        lineIndex = lineIndexForOffset(layout, wordOffset),
+        maskLeftPx = measuredWordLeft,
+        maskWidthPx = measuredWordWidth,
+        maskHeightPx = measuredWordHeight,
     )
+}
+
+private fun emphasizedWordIndices(plan: RenderWordPlan): Set<Int> {
+    val indices = HashSet<Int>()
+    var atom = 0
+    plan.chunks.forEach { chunk ->
+        if (chunk.emphasized) for (local in chunk.words.indices) indices += atom + local
+        atom += chunk.words.size
+    }
+    return indices
 }
 
 private data class RangeGeometry(
@@ -544,7 +626,7 @@ private fun textLayoutInkBounds(layout: TextLayoutResult): Rect? {
     }
 }
 
-private fun graphemeRanges(text: String): List<LocalTextRange> {
+internal fun graphemeRanges(text: String): List<LocalTextRange> {
     if (text.isEmpty()) return emptyList()
 
     var trimStart = 0

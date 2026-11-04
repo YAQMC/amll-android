@@ -32,7 +32,7 @@ internal fun AMLLBackgroundVocal(
     active: Boolean,
     isPlaying: Boolean,
     placedFirst: Boolean,
-    positionMs: Long,
+    positionMs: () -> Long,
     style: AMLLStyle,
     springSpec: FocusSpringSpec,
 ) {

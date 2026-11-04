@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -16,18 +18,23 @@ import androidx.compose.ui.graphics.graphicsLayer
 @Composable
 internal fun InterludeDots(
     interlude: LyricInterlude,
-    positionMs: Long,
+    positionMs: () -> Long,
     style: AMLLStyle,
     alignEnd: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val visual = interludeVisualStateAt(interlude, positionMs)
+    // Derived so the dots only update while the interlude visual actually changes, and read only
+    // inside graphicsLayer blocks so those updates skip recomposition and relayout.
+    val visualState = remember(interlude, positionMs) {
+        derivedStateOf { interludeVisualStateAt(interlude, positionMs()) }
+    }
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(style.interludeItemHeight)
             .graphicsLayer {
+                val visual = visualState.value
                 scaleX = visual.scale
                 scaleY = visual.scale
             },
@@ -42,7 +49,7 @@ internal fun InterludeDots(
             Box(
                 modifier = Modifier
                     .size(style.interludeDotSize)
-                    .graphicsLayer { alpha = visual.dotAlphas[index] }
+                    .graphicsLayer { alpha = visualState.value.dotAlphas[index] }
                     .background(style.activeColor, CircleShape),
             )
         }

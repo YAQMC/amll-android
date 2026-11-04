@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -111,13 +112,22 @@ fun AMLLPlayer(
             includeBottomLine = hasBottomLine,
         )
     }
-    val isEndOfSong = isLyricTimelineEndOfSong(groups, state.positionMs)
+    // Playback position changes every frame. The player body only needs the discrete facts derived
+    // from it, so each is a derived state that invalidates composition only when its value changes.
+    // Lines read the position through [positionProvider] in their draw phase instead.
+    val positionProvider: () -> Long = remember(state) { { state.positionMs } }
+    val isEndOfSong by remember(groups) {
+        derivedStateOf { isLyricTimelineEndOfSong(groups, state.positionMs) }
+    }
 
-    val activeLineIndex = state.activeLineIndex
+    val activeLineIndex by remember(state) { derivedStateOf { state.activeLineIndex } }
     val activeGroupIndex = remember(groups, activeLineIndex) {
         groups.indexOfFirst { it.mainIndex == activeLineIndex }
     }
-    val activeInterlude = activeInterludeAt(interludes, state.positionMs)
+    val activeInterludeState = remember(interludes) {
+        derivedStateOf { activeInterludeAt(interludes, state.positionMs) }
+    }
+    val activeInterlude = activeInterludeState.value
     val passedBoundary = resolvePassedBoundary(
         activeGroupIndex = activeGroupIndex,
         interludeAnchorGroupIndex = activeInterlude?.anchorGroupIndex,
@@ -171,8 +181,11 @@ fun AMLLPlayer(
         }
     }
 
+    val isSeekFrame by remember(state) {
+        derivedStateOf { lastSeekPositionMs == state.positionMs }
+    }
     val linePosSpring = focusSpringSpec(
-        isSeeking = lastSeekPositionMs == state.positionMs,
+        isSeeking = isSeekFrame,
         isInterludeActive = activeInterlude != null,
         intervalMs = focusIntervalMs,
         isEndOfSong = isEndOfSong,
@@ -376,7 +389,7 @@ fun AMLLPlayer(
                     val alignEnd = anchor in groups.indices && groups[anchor].main.isDuet
                     InterludeDots(
                         interlude = item.interlude,
-                        positionMs = state.positionMs,
+                        positionMs = positionProvider,
                         style = style,
                         alignEnd = alignEnd,
                     )
@@ -426,7 +439,7 @@ fun AMLLPlayer(
                         group = group,
                         active = active,
                         isPlaying = state.isPlaying,
-                        positionMs = state.positionMs,
+                        positionMs = positionProvider,
                         style = style,
                         hasDuetLine = hasDuetLine,
                         linePosSpring = linePosSpring,
@@ -478,7 +491,7 @@ private fun LyricGroup(
     group: LyricLineGroup,
     active: Boolean,
     isPlaying: Boolean,
-    positionMs: Long,
+    positionMs: () -> Long,
     style: AMLLStyle,
     hasDuetLine: Boolean,
     linePosSpring: FocusSpringSpec,
