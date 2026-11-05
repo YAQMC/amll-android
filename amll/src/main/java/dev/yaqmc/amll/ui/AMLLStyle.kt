@@ -3,6 +3,7 @@ package dev.yaqmc.amll.ui
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -74,4 +75,21 @@ data class AMLLStyle(
     // Appended for source compatibility. Upstream setEnableSpring(false) swaps physical springs for
     // ordinary CSS transform transitions rather than disabling animation outright.
     val enableSpring: Boolean = true,
+    // Horizontal alignment of ordinary lines (the player's CSS text-align). Duet lines stay at the
+    // end edge, like upstream `.lyricDuetLine { text-align: right }`.
+    val textAlign: TextAlign = TextAlign.Start,
+    // Main/background lyric line height (CSS line-height, usually in em). Unspecified keeps the
+    // font's own metrics, the pre-existing behavior.
+    val lineHeight: TextUnit = TextUnit.Unspecified,
+    // False mirrors a host that suppresses AMLL's emphasized long-word lift and glow; ordinary word
+    // reveal and drift stay intact.
+    val enableWordEmphasis: Boolean = true,
 )
+
+/** Horizontal placement of a main or background line; see [AMLLStyle.textAlign]. */
+internal fun AMLLStyle.lineTextAlign(isDuet: Boolean): TextAlign = when {
+    isDuet -> TextAlign.End
+    textAlign == TextAlign.Right -> TextAlign.End
+    textAlign == TextAlign.Left || textAlign == TextAlign.Justify -> TextAlign.Start
+    else -> textAlign
+}

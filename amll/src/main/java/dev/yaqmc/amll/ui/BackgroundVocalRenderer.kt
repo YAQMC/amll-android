@@ -66,13 +66,13 @@ internal fun AMLLBackgroundVocal(
         label = "amll-background-line-scale",
     )
     val frame = backgroundVocalFrame(slideY)
-    val alignment = if (mainIsDuet) Alignment.End else Alignment.Start
-    val textAlign = if (mainIsDuet) TextAlign.End else TextAlign.Start
+    val textAlign = style.lineTextAlign(mainIsDuet)
+    val alignment = textAlign.horizontalAlignment()
     val density = androidx.compose.ui.platform.LocalDensity.current
     val groupContentGapPx = with(density) {
         resolveAMLLLineLayoutPx(style.lineFontSize.toPx()).groupContentGapPx.roundToInt()
     }
-    val originX = if (mainIsDuet) 1f else 0f
+    val originX = textAlign.originFraction()
     val originY = if (placedFirst) 1f else 0f
 
     Layout(
@@ -95,12 +95,14 @@ internal fun AMLLBackgroundVocal(
                         fontSize = style.lineFontSize * style.backgroundLineScale,
                         fontWeight = style.lyricFontWeight,
                         textAlign = textAlign,
+                        lineHeight = style.lineHeight,
                     ),
                     active = active,
                     activeColor = style.activeColor,
                     inactiveColor = style.inactiveColor,
                     minimumHeight = 28.dp,
                     fadeWidthEm = style.wordFadeWidthEm,
+                    enableEmphasis = style.enableWordEmphasis,
                 )
             }
         },

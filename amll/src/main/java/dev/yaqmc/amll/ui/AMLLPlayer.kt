@@ -386,12 +386,12 @@ fun AMLLPlayer(
             when (item) {
                 is LyricListItem.Interlude -> {
                     val anchor = item.interlude.anchorGroupIndex
-                    val alignEnd = anchor in groups.indices && groups[anchor].main.isDuet
+                    val anchorIsDuet = anchor in groups.indices && groups[anchor].main.isDuet
                     InterludeDots(
                         interlude = item.interlude,
                         positionMs = positionProvider,
                         style = style,
-                        alignEnd = alignEnd,
+                        textAlign = style.lineTextAlign(anchorIsDuet),
                     )
                 }
 
@@ -501,8 +501,8 @@ private fun LyricGroup(
 ) {
     if (AmllRenderStats.enabled) AmllRenderStats.groupCompositions++
     val main = group.main
-    val mainAlignment = if (main.isDuet) Alignment.End else Alignment.Start
-    val mainTextAlign = if (main.isDuet) TextAlign.End else TextAlign.Start
+    val mainTextAlign = style.lineTextAlign(main.isDuet)
+    val mainAlignment = mainTextAlign.horizontalAlignment()
     val backgroundFirst = shouldPlaceBackgroundFirst(
         group = group,
         alwaysPostpositionBackground = style.alwaysPostpositionBackground,
@@ -573,11 +573,7 @@ private fun LyricGroup(
                 .graphicsLayer {
                     scaleX = mainScale
                     scaleY = mainScale
-                    transformOrigin = if (main.isDuet) {
-                        TransformOrigin(1f, 0.5f)
-                    } else {
-                        TransformOrigin(0f, 0.5f)
-                    }
+                    transformOrigin = TransformOrigin(mainTextAlign.originFraction(), 0.5f)
                 },
             horizontalAlignment = mainAlignment,
         ) {
@@ -588,11 +584,13 @@ private fun LyricGroup(
                     fontSize = style.lineFontSize,
                     fontWeight = style.lyricFontWeight,
                     textAlign = mainTextAlign,
+                    lineHeight = style.lineHeight,
                 ),
                 active = active,
                 activeColor = style.activeColor,
                 inactiveColor = style.inactiveColor,
                 fadeWidthEm = style.wordFadeWidthEm,
+                enableEmphasis = style.enableWordEmphasis,
             )
 
             if (main.translatedLyric.isNotBlank()) {
@@ -631,4 +629,16 @@ private fun LyricGroup(
             )
         }
     }
+}
+
+internal fun TextAlign.horizontalAlignment(): Alignment.Horizontal = when (this) {
+    TextAlign.End -> Alignment.End
+    TextAlign.Center -> Alignment.CenterHorizontally
+    else -> Alignment.Start
+}
+
+internal fun TextAlign.originFraction(): Float = when (this) {
+    TextAlign.End -> 1f
+    TextAlign.Center -> 0.5f
+    else -> 0f
 }

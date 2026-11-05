@@ -13,6 +13,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.graphicsLayer
 
 @Composable
@@ -20,7 +21,7 @@ internal fun InterludeDots(
     interlude: LyricInterlude,
     positionMs: () -> Long,
     style: AMLLStyle,
-    alignEnd: Boolean,
+    textAlign: TextAlign,
     modifier: Modifier = Modifier,
 ) {
     // Derived so the dots only update while the interlude visual actually changes, and read only
@@ -38,11 +39,7 @@ internal fun InterludeDots(
                 scaleX = visual.scale
                 scaleY = visual.scale
             },
-        horizontalArrangement = if (alignEnd) {
-            Arrangement.spacedBy(style.interludeDotGap, Alignment.End)
-        } else {
-            Arrangement.spacedBy(style.interludeDotGap, Alignment.Start)
-        },
+        horizontalArrangement = Arrangement.spacedBy(style.interludeDotGap, textAlign.horizontalAlignment()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         repeat(3) { index ->

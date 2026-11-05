@@ -43,6 +43,7 @@ internal fun KaraokeText(
     modifier: Modifier = Modifier,
     minimumHeight: Dp = 48.dp,
     fadeWidthEm: Float = 1f,
+    enableEmphasis: Boolean = true,
 ) {
     if (AmllRenderStats.enabled) AmllRenderStats.karaokeCompositions++
     val measurer = rememberTextMeasurer()
@@ -87,7 +88,9 @@ internal fun KaraokeText(
     }
     // Per-grapheme shadow layouts are only drawn for emphasized chunks; measuring them for every
     // word made each line's first composition (e.g. scrolling into view) needlessly expensive.
-    val emphasizedWordIndices = remember(renderPlan) { emphasizedWordIndices(renderPlan) }
+    val emphasizedWordIndices = remember(renderPlan, enableEmphasis) {
+        if (enableEmphasis) emphasizedWordIndices(renderPlan) else emptySet()
+    }
     val characterShadowLayouts = remember(renderWords, style, measurer, emphasizedWordIndices) {
         renderWords.mapIndexed { wordIndex, word ->
             if (wordIndex !in emphasizedWordIndices) return@mapIndexed emptyList()
@@ -158,7 +161,9 @@ internal fun KaraokeText(
                 style = style,
                 softWrap = false,
                 maxLines = Int.MAX_VALUE,
-                constraints = Constraints(maxWidth = widthPx),
+                // A minimum width keeps the paragraph as wide as the line box; otherwise it shrinks
+                // to its content and textAlign (centre, end, duet) has no effect.
+                constraints = Constraints(minWidth = widthPx, maxWidth = widthPx),
             )
         }
         val fontSizePx = with(density) { style.fontSize.toPx() }
@@ -225,7 +230,9 @@ internal fun KaraokeText(
                     val lineIndex = geometry.lineIndex
                     val baseTranslateX = wordBoxTranslationsPx.getOrElse(globalIndex) { 0f }
                     val baseTranslateY = rubyReservePx + lineIndex * annotationRowExtraPx
-                    val wordMotion = if (active) {
+                    // A suppressed emphasis also drops the emphasized chunk's float, as the web
+                    // host's `transform: none` on the emphasize wrapper does.
+                    val wordMotion = if (active && (enableEmphasis || !chunk.emphasized)) {
                         wordMotionAt(
                             word = word,
                             positionMs = positionMs,
@@ -235,7 +242,7 @@ internal fun KaraokeText(
                         WordMotion()
                     }
 
-                    if (active && chunk.emphasized && geometry.characters.isNotEmpty()) {
+                    if (active && enableEmphasis && chunk.emphasized && geometry.characters.isNotEmpty()) {
                         geometry.characters.forEachIndexed { localCharacterIndex, character ->
                             val characterMotion = characterMotionAt(
                                 word = chunk.emphasisWord,
