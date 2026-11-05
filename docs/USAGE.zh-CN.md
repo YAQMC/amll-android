@@ -335,6 +335,9 @@ AMLLStyle(
     wordFadeWidthEm = 1f,
     alignPosition = 0.35f,
     alignAnchor = AMLLAlignAnchor.Center,
+    textAlign = TextAlign.Start,
+    lineHeight = TextUnit.Unspecified,
+    enableWordEmphasis = true,
 )
 ```
 
@@ -347,7 +350,10 @@ AMLLStyle(
 - focus 默认 `Center @ 0.35`；
 - `horizontalPadding = Dp.Unspecified` 时，容器 `<=500dp` 用 `20dp`，更宽时用约 `1em`；
 - 字重默认 `600 / SemiBold`；
-- word fade width 默认 `1em`。
+- word fade width 默认 `1em`；
+- `textAlign` 控制普通行的水平对齐（`Start`/`Center`/`End`），与纵向焦点 `alignAnchor` 无关；对唱行始终靠末端，对应上游 `.lyricDuetLine { text-align: right }`；
+- `lineHeight`（如 `1.16.em`）作用于主歌词和背景歌词，`Unspecified` 保持字体自身行高；
+- `enableWordEmphasis = false` 关闭长词强调的上浮/辉光及该词块的漂浮，普通逐字填充不受影响。
 
 ## 11. YAQMC 推荐接入结构
 
