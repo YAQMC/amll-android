@@ -116,7 +116,7 @@ fun AMLLPlayer(
     // from it, so each is a derived state that invalidates composition only when its value changes.
     // Lines read the position through [positionProvider] in their draw phase instead.
     val positionProvider: () -> Long = remember(state) { { state.positionMs } }
-    val isEndOfSong by remember(groups) {
+    val isEndOfSong by remember(state, groups) {
         derivedStateOf { isLyricTimelineEndOfSong(groups, state.positionMs) }
     }
 
@@ -124,7 +124,7 @@ fun AMLLPlayer(
     val activeGroupIndex = remember(groups, activeLineIndex) {
         groups.indexOfFirst { it.mainIndex == activeLineIndex }
     }
-    val activeInterludeState = remember(interludes) {
+    val activeInterludeState = remember(state, interludes) {
         derivedStateOf { activeInterludeAt(interludes, state.positionMs) }
     }
     val activeInterlude = activeInterludeState.value

@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
@@ -189,6 +190,26 @@ class RendererBehaviorTest {
         }
         assertEquals(0L, stats.karaokeCompositions)
         assertEquals(10L, stats.karaokeDraws)
+    }
+
+    @Test
+    fun cachedTimelineFollowsPlayerStateReplacement() {
+        val lines = PerfFixtures.denseCjk(3)
+        var state by mutableStateOf(
+            AMLLPlayerState(lines, initialPositionMs = 0, initialIsPlaying = false),
+        )
+        show { AMLLPlayer(state = state, bottomLine = { androidx.compose.material3.Text("End") }) }
+        state = AMLLPlayerState(
+            lines,
+            initialPositionMs = lines.last().endTimeMs + 10_000,
+            initialIsPlaying = false,
+        )
+        capture()
+        val replacedTop = rule.onNodeWithText("End").fetchSemanticsNode().boundsInRoot.top
+        freshCapture()
+        val freshTop = rule.onNodeWithText("End").fetchSemanticsNode().boundsInRoot.top
+        // Scroll offsets can round differently by one pixel after a fresh composition.
+        assertEquals("replacement must focus the end marker using its own clock", freshTop, replacedTop, 1f)
     }
 
     @Test
